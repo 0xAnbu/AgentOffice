@@ -72,19 +72,46 @@ class Supervisor:
         return len(self.store.store_messages([m for m in res.get("messages", []) if int(m["id"]) in missing]))
 
     def flush_reports(self) -> None:
-        for state, ids in self.store.unreported().items():
-            sess = self.store.q("SELECT injected_session FROM inbox WHERE message_id = ?", (ids[0],))
-            sid = (sess[0]["injected_session"] if sess else None) if state != "delivered_to_supervisor" else None
+        """Confirm local states to the server. Never raises: one bad receipt must not block the others.
+
+        * ``processed`` without stored evidence (older stores, or a failed `ack`) is confirmed as ``acknowledged``,
+          which is the most the server can accept without evidence.
+        * A rejected batch (4xx) is retried message by message; a message the server still rejects is given up
+          (logged), the rest go through. Transient failures (network, 5xx, 429) stop the flush until the next loop.
+        """
+        for g in self.store.unreported():
+            state, ids, evidence = g["state"], g["ids"], g["evidence"]
+            sent = "acknowledged" if state == "processed" and not evidence else state
+            body = {"state": sent, "session_id": g["session_id"], "evidence": evidence if sent == "processed" else None}
             try:
-                self.api.call(
-                    "POST", "/api/deliveries", {"message_ids": ids, "state": state, "session_id": sid or None}
-                )
-                self.store.set_reported(ids, state)
-            except ApiError as e:
-                if e.status == 404:  # message deleted by an admin / no longer addressed to us: stop retrying
-                    self.store.set_reported(ids, state)
-                else:
-                    raise
+                self._post_receipts(ids, body)
+            except (ApiError, OSError) as e:
+                if isinstance(e, ApiError) and 400 <= e.status < 500 and e.status != 429:
+                    for mid in ids:
+                        try:
+                            self._post_receipts([mid], body)
+                            self.store.set_reported([mid], state)
+                        except ApiError as e1:
+                            if 400 <= e1.status < 500 and e1.status != 429:
+                                log.warning("delivery receipt for #%s rejected (%s): giving up", mid, e1.payload)
+                                self.store.set_reported([mid], state)
+                            else:
+                                return
+                        except OSError:
+                            return
+                    continue
+                log.warning("delivery receipts not sent (%s); retrying later", e)
+                return
+            self.store.set_reported(ids, state)
+
+    def _post_receipts(self, ids: list[int], body: dict[str, Any]) -> None:
+        try:
+            self.api.call("POST", "/api/deliveries", {"message_ids": ids, **body})
+        except ApiError as e:
+            if e.status == 403 and body.get("session_id"):  # session no longer ours (ended/restored): report without it
+                self.api.call("POST", "/api/deliveries", {"message_ids": ids, **body, "session_id": None})
+            else:
+                raise
 
     # -- liveness ------------------------------------------------------------------------------------
     def device_beat(self, force: bool = False) -> None:
@@ -190,7 +217,9 @@ class Supervisor:
     # -- active push (opt-in resume) -----------------------------------------------------------------
     def push_idle(self) -> list[str]:
         used: list[str] = []
-        pending = self.store.pending(only_new=True)
+        from .hooks import MAX_INJECT
+
+        pending = self.store.pending(only_new=True)[:MAX_INJECT]
         if not pending:
             return used
         for s in self.store.live_sessions():
@@ -223,7 +252,7 @@ class Supervisor:
         ids = [int(m["message_id"]) for m in pending if int(m["message_id"]) > 0]
         self.api.call("POST", "/api/deliveries", {"message_ids": ids, "state": "processed", "session_id": s["server_id"],
                       "evidence": {"reply_message_id": r["id"], "adapter": s["runtime"], "mechanism": mech}})  # fmt: skip
-        self.store.mark(ids, "processed")
+        self.store.mark(ids, "processed", evidence={"reply_message_id": r["id"]})
         self.store.set_reported(ids, "processed")
 
     def _codex_resume(self, s: dict[str, Any], pending: list[dict[str, Any]], text: str) -> None:
@@ -232,14 +261,15 @@ class Supervisor:
         with tempfile.NamedTemporaryFile("r", suffix=".txt") as out:
             cmd = ["codex", "exec", "resume", s["local_id"], "-o", out.name, text + "\n\nAnswer the message(s) directly; "
                    "your final message will be posted as your reply."]  # fmt: skip
-            subprocess.run(cmd, cwd=s["cwd"] or None, capture_output=True, text=True, timeout=600, check=False)
-            self._relay(s, pending, open(out.name, encoding="utf-8").read(), "codex exec resume")  # noqa: SIM115
+            if _run(cmd, s["cwd"] or None, 600).returncode == 0:
+                self._relay(s, pending, open(out.name, encoding="utf-8").read(), "codex exec resume")  # noqa: SIM115
 
     def _opencode_run(self, s: dict[str, Any], pending: list[dict[str, Any]], text: str) -> None:
         cmd = ["opencode", "run", "--session", s["local_id"], text + "\n\nAnswer the message(s) directly; your final "
                "message will be posted as your reply."]  # fmt: skip
-        res = subprocess.run(cmd, cwd=s["cwd"] or None, capture_output=True, text=True, timeout=600, check=False)
-        self._relay(s, pending, res.stdout, "opencode run --session")
+        res = _run(cmd, s["cwd"] or None, 600)
+        if res.returncode == 0:
+            self._relay(s, pending, res.stdout, "opencode run --session")
 
     def exec_deliver(self, runtime: str, workdir: str, timeout: int = 600) -> dict[str, Any]:
         """Deliver pending messages by starting a headless turn of a runtime that has no trusted hooks.
@@ -251,10 +281,12 @@ class Supervisor:
         """
         import tempfile
 
-        pending = [m for m in self.store.pending(only_new=True) if int(m["message_id"]) > 0]
+        from .hooks import MAX_INJECT, render
+
+        # one turn answers at most what it is shown; the rest stays pending for the next turn
+        pending = [m for m in self.store.pending(only_new=True) if int(m["message_id"]) > 0][:MAX_INJECT]
         if not pending:
             return {"delivered": 0}
-        from .hooks import render
 
         sess = self.api.call("POST", "/api/sessions", {"project": self.cfg.get("project"), "runtime": runtime,
                              "device": self.cfg.get("device"), "specialization": self.cfg.get("specialization"),
@@ -273,16 +305,16 @@ class Supervisor:
         if runtime == "codex":
             with tempfile.NamedTemporaryFile("r", suffix=".txt", delete=False) as out:
                 path = out.name
-            res = subprocess.run(["codex", "exec", "--skip-git-repo-check", "-o", path, text], cwd=workdir,
-                                 capture_output=True, text=True, timeout=timeout, check=False)  # fmt: skip
-            answer = Path(path).read_text("utf-8") if Path(path).exists() else ""
+            res = _run(["codex", "exec", "--skip-git-repo-check", "-o", path, text], workdir, timeout)
+            answer = Path(path).read_text("utf-8") if Path(path).exists() and res.returncode == 0 else ""
             Path(path).unlink(missing_ok=True)
         elif runtime == "opencode":
             model = (self.store.get("adapter.opencode", {}) or {}).get("model") or os.environ.get(
                 "AGENTLINK_OPENCODE_MODEL"
             )
-            res = subprocess.run(["opencode", "run", "--format", "json", *(["-m", model] if model else []), text], cwd=workdir,
-                                 capture_output=True, text=True, timeout=timeout, check=False)  # fmt: skip
+            res = _run(
+                ["opencode", "run", "--format", "json", *(["-m", model] if model else []), text], workdir, timeout
+            )
             answer = _opencode_text(res.stdout)
         else:
             raise ValueError(f"no headless delivery for {runtime}")
@@ -334,12 +366,23 @@ class Supervisor:
             try:
                 self.once()
                 backoff = 1.0
-            except (ApiError, OSError, ValueError, json.JSONDecodeError) as e:
+            except (ApiError, OSError, ValueError, json.JSONDecodeError, subprocess.SubprocessError) as e:
                 self.status["errors"] += 1
                 self.store.put("supervisor_last_error", {"at": time.time(), "error": str(e)[:300]})
                 log.warning("supervisor iteration failed (%s); retrying in %.0fs", e, backoff)
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 60.0)
+
+
+def _run(cmd: list[str], cwd: str | None, timeout: float) -> subprocess.CompletedProcess[str]:
+    """Run a runtime turn; a timeout or a missing binary is a failed turn (returncode != 0), never a supervisor crash."""
+    try:
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as e:
+        out = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+        return subprocess.CompletedProcess(cmd, 124, out, f"timed out after {timeout}s")
+    except OSError as e:
+        return subprocess.CompletedProcess(cmd, 127, "", str(e))
 
 
 def _opencode_text(stdout: str) -> str:

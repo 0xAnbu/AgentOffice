@@ -126,7 +126,11 @@ def snapshot(db: Database, p: Principal, q: dict[str, Any], settings: Settings) 
         for pr in projects:
             c = coord_row(tx, int(pr["id"]))
             coords[pr["name"]] = state_out(c, now)
-        devices = tx.query("SELECT owner, name, last_seen, supervisor_seen FROM devices ORDER BY owner, name")
+        devices = tx.query(  # only devices of participants in the projects this reader can see
+            "SELECT owner, name, last_seen, supervisor_seen FROM devices WHERE owner IN (SELECT a.owner FROM agents a "
+            f"JOIN project_members pm ON pm.agent_id = a.id WHERE pm.project_id IN ({ph})) ORDER BY owner, name",
+            tuple(ids),
+        )
     return {
         "server_time": now,
         "cursor": cursor,

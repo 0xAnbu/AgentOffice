@@ -479,6 +479,15 @@ def _update_task_tx(tx: Executor, p: Principal, ch: Row, task_id: int, payload: 
         for d in deps:
             tx.execute("INSERT INTO task_deps(task_id, depends_on) VALUES (?, ?)", (task_id, d))
         changes["depends_on"] = deps
+    # A task being worked on must have someone working on it: never leave claimed/in_progress/review without a holder
+    # (nothing could claim or recover it). Unassigning sends it back to open; activating an unassigned task needs a claim.
+    final_status = changes.get("status", row["status"])
+    unassigned = changes["assignee"] is None if "assignee" in changes else row["assignee_id"] is None
+    if final_status in ("claimed", "in_progress", "review") and unassigned:
+        raise Conflict(
+            f"task #{task_id} cannot be {final_status} without a holder: claim it (or set status open)",
+            reason="holder_required",
+        )
     if "status" in changes:
         sets.append("status = ?")
         params.append(changes["status"])
@@ -899,10 +908,20 @@ def heartbeat(db: Database, p: Principal, payload: dict[str, Any]) -> dict[str, 
 
 def presence(db: Database, p: Principal) -> list[dict[str, Any]]:
     now = now_ms()
-    rows = db.query(
+    from .events import scoped_monitor
+
+    everyone = p.is_admin or (p.role == "monitor" and not scoped_monitor(db, p))
+    rows = db.query(  # others are visible only if they share a project with the reader (scoped monitors: their scope)
         "SELECT a.name, a.role, pr.status, pr.activity, pr.last_seen, c.name AS channel FROM presence pr "
         "JOIN agents a ON a.id = pr.agent_id LEFT JOIN channels c ON c.id = pr.channel_id "
-        "ORDER BY pr.last_seen DESC"
+        + (
+            ""
+            if everyone
+            else "WHERE pr.agent_id = ? OR pr.agent_id IN (SELECT pm2.agent_id FROM project_members pm2 "
+            "WHERE pm2.project_id IN (SELECT pm1.project_id FROM project_members pm1 WHERE pm1.agent_id = ?)) "
+        )
+        + "ORDER BY pr.last_seen DESC",
+        () if everyone else (p.agent_id, p.agent_id),
     )
     return [
         {

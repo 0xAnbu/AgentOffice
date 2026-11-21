@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .local import Store, home
+from .local import Store, _private_dir, home
 
 CAPABILITIES = (
     "observation",
@@ -53,8 +53,7 @@ def _bin() -> str:
 def _backup(path: Path) -> Path | None:
     if not path.exists():
         return None
-    d = home() / "backups"
-    d.mkdir(parents=True, exist_ok=True, mode=0o700)
+    d = _private_dir(_private_dir(home()) / "backups")
     dst = d / f"{path.name}.{int(time.time())}.bak"
     shutil.copy2(path, dst)
     return dst
@@ -202,10 +201,13 @@ class ClaudeCode(Adapter):
         cfg = store.get("adapter.claude-code", {}) or {}
         if not cfg.get("auto_resume") or not session.get("local_id"):
             return None
-        subprocess.Popen(
-            [self.binary or "claude", "--resume", session["local_id"], "-p", text],
-            cwd=session.get("cwd") or None, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
-        )  # fmt: skip
+        try:
+            subprocess.Popen(
+                [self.binary or "claude", "--resume", session["local_id"], "-p", text],
+                cwd=session.get("cwd") or None, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+            )  # fmt: skip
+        except OSError:
+            return None
         return "claude --resume -p"
 
 

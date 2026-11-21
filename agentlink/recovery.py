@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import weakref
 from typing import Any
 
 from .config import Settings
@@ -160,6 +161,15 @@ def reconcile(db: Database, settings: Settings) -> dict[str, int]:
             (now,),
         ):
             stats["tasks_orphaned"] += orphan_task(tx, t, "lease expired", now)
+        # Safety net: an active task without any holder can never be claimed or orphaned -> back to open.
+        for t in tx.query(
+            "SELECT * FROM tasks WHERE status IN ('claimed', 'in_progress', 'review') AND assignee_id IS NULL"
+        ):
+            if tx.execute("UPDATE tasks SET status = 'open', assignee_session = NULL, lease_expires_at = NULL, "
+                          "version = version + 1, updated_at = ? WHERE id = ? AND assignee_id IS NULL", (now, t["id"])):  # fmt: skip
+                emit(tx, "task.recovered", project_id=t["project_id"], channel_id=int(t["channel_id"]), task_id=int(t["id"]),
+                     data={"epoch": t["lease_epoch"], "state": "open", "reason": "active without holder"})  # fmt: skip
+                stats["tasks_recovered"] += 1
         for t in tx.query(
             "SELECT * FROM tasks WHERE status = 'orphaned' AND orphaned_at <= ?", (now - settings.orphan_hold * 1000,)
         ):
@@ -291,8 +301,26 @@ def last_run(db: Database) -> int | None:
     return int(row["value"]) if row else None
 
 
+HEALTH_TTL = 10.0  # seconds a deep-health result is reused (the endpoint is anonymous: no write per request)
+_health_cache: weakref.WeakKeyDictionary[Database, tuple[float, dict[str, Any]]] = weakref.WeakKeyDictionary()
+
+
 def health(db: Database, settings: Settings) -> dict[str, Any]:
-    """Deep health: database read/write and a recent reconciler pass. Used by deployment/healthcheck.sh."""
+    """Deep health: database read/write and a recent reconciler pass. Used by deployment/healthcheck.sh.
+
+    The write probe is the point (a read-only or full disk must fail the check), but it runs at most once per
+    HEALTH_TTL per database, so a flood of anonymous requests cannot serialise SQLite."""
+    import time
+
+    hit = _health_cache.get(db)
+    if hit and time.monotonic() - hit[0] < HEALTH_TTL:
+        return {**hit[1], "cached": True}
+    out = _health_now(db, settings)
+    _health_cache[db] = (time.monotonic(), out)
+    return out
+
+
+def _health_now(db: Database, settings: Settings) -> dict[str, Any]:
     out: dict[str, Any] = {"db": False, "reconciler": False}
     try:
         with db.transaction() as tx:

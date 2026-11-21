@@ -181,6 +181,7 @@ def delete_agent(db: Database, p: Principal, agent_name: str, purge_messages: bo
 
 
 def list_agents(db: Database, p: Principal) -> list[dict[str, Any]]:
+    p.require_admin()  # the global census (names, owners, tokens) is an admin view
     agents = db.query(
         "SELECT id, name, role, description, disabled, created_at, owner, specialization FROM agents "
         "WHERE name NOT LIKE ? ORDER BY name",
@@ -271,6 +272,16 @@ def create_channel(db: Database, p: Principal, payload: dict[str, Any]) -> dict[
             raise Conflict(f"channel '{name}' already exists")
         if pid is None:
             pid = default_project_id(tx)
+        if repo and not p.is_admin:
+            # GitHub events of `repo` are posted to every channel bound to it: binding a repo is a project-level
+            # decision. Members may only use their project's own repo; any other needs a (project) admin.
+            pr = tx.one(
+                "SELECT pj.repo, pm.role FROM projects pj LEFT JOIN project_members pm "
+                "ON pm.project_id = pj.id AND pm.agent_id = ? WHERE pj.id = ?",
+                (p.agent_id, pid),
+            )
+            if pr is None or (str(pr["repo"] or "").lower() != repo.lower() and pr["role"] != "admin"):
+                raise Forbidden("only a project admin can bind a channel to a repository other than the project's")
         row = tx.one(
             "INSERT INTO channels(name, repo, description, created_by, created_at, project_id) "
             "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",

@@ -42,10 +42,23 @@ STATIC = Path(__file__).parent / "static"
 Handler = Callable[[Hub, Principal, Request, Any], Any]
 
 
+async def read_body(request: Request, limit: int) -> bytes:
+    """Read at most `limit` bytes: reject on Content-Length first, then count while streaming (chunked bodies)."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > limit:
+        raise TooLarge(f"body exceeds {limit} bytes")
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            raise TooLarge(f"body exceeds {limit} bytes")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def read_json(request: Request, hub: Hub) -> Any:
-    raw = await request.body()
-    if len(raw) > hub.settings.max_body_bytes:
-        raise TooLarge(f"body exceeds {hub.settings.max_body_bytes} bytes")
+    raw = await read_body(request, hub.settings.max_body_bytes)
     if not raw:
         return {}
     try:
@@ -129,9 +142,7 @@ async def agent_guide(_: Request) -> Response:
 
 async def github_webhook(request: Request) -> Response:
     hub = await run_in_threadpool(get_hub)
-    raw = await request.body()
-    if len(raw) > 5 * 1024 * 1024:  # GitHub caps payloads at 25 MB; we only need summaries
-        raise TooLarge("webhook payload too large")
+    raw = await read_body(request, 5 * 1024 * 1024)  # GitHub caps payloads at 25 MB; we only need summaries
     github.verify_signature(hub.settings.github_webhook_secret, raw, request.headers.get("x-hub-signature-256"))
     try:
         payload = json.loads(raw)

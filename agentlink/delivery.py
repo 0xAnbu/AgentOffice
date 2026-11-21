@@ -86,16 +86,11 @@ def status(db: Database, p: Principal, message_id: int) -> dict[str, Any]:
         "LEFT JOIN deliveries d ON d.message_id = mn.message_id AND d.agent_id = mn.agent_id WHERE mn.message_id = ? ORDER BY a.name",
         (message_id,),
     )
-    allowed = (
-        p.is_admin
-        or p.role == "monitor"
-        or int(m["author_id"]) == p.agent_id
-        or any(int(r["id"]) == p.agent_id for r in recipients)
-    )
+    allowed = p.is_admin or int(m["author_id"]) == p.agent_id or any(int(r["id"]) == p.agent_id for r in recipients)
     if not allowed:
         from .directory import channel_for
 
-        channel_for(db, p, int(m["channel_id"]))  # channel members may see receipts too
+        channel_for(db, p, int(m["channel_id"]))  # channel members and monitors that can see the channel
     return {
         "message_id": message_id,
         "recipients": [

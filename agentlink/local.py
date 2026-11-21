@@ -25,6 +25,8 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
+from .cli import OPENER, check_server_url
+
 VERSION = "1.0.0"
 
 
@@ -33,7 +35,10 @@ def home() -> Path:
 
 
 def _private_dir(p: Path) -> Path:
+    """Create (or tighten) a directory only the user can enter: config, tokens and message bodies live here."""
     p.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if p.stat().st_mode & 0o077:
+        p.chmod(0o700)  # mkdir's mode is ignored for existing directories and masked by the umask for new ones
     return p
 
 
@@ -83,9 +88,7 @@ class Api:
     """Small JSON client that raises instead of exiting (the CLI's Client exits; libraries must not)."""
 
     def __init__(self, server: str, token: str, timeout: float = 30) -> None:
-        if not server or not server.startswith(("http://", "https://")):
-            raise ValueError("server URL must be http(s)")
-        self.server = server.rstrip("/")
+        self.server = check_server_url(server)
         self.token = token
         self.timeout = timeout
 
@@ -106,10 +109,13 @@ class Api:
         if data is not None:
             req.add_header("Content-Type", "application/json")
         try:
-            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:  # noqa: S310
+            with OPENER.open(req, timeout=timeout or self.timeout) as resp:
                 raw = resp.read()
                 return json.loads(raw or b"null")
         except urllib.error.HTTPError as e:
+            if 300 <= e.code < 400:
+                raise ApiError(e.code, {"error": "redirect", "message": f"server redirected to {e.headers.get('Location')}; "
+                               "not followed (it would resend the token). Fix the server URL."}) from None  # fmt: skip
             raw = e.read().decode("utf-8", "replace")
             try:
                 payload: Any = json.loads(raw)
@@ -133,7 +139,7 @@ SCHEMA = [
     """CREATE TABLE IF NOT EXISTS inbox (
         message_id INTEGER PRIMARY KEY, channel TEXT, author TEXT, kind TEXT, body TEXT, priority INTEGER,
         data TEXT, thread_id INTEGER, received_at REAL NOT NULL, state TEXT NOT NULL DEFAULT 'delivered_to_supervisor',
-        reported TEXT NOT NULL DEFAULT '', injected_at REAL, injected_session TEXT, injected_via TEXT)""",
+        reported TEXT NOT NULL DEFAULT '', injected_at REAL, injected_session TEXT, injected_via TEXT, evidence TEXT)""",
     "CREATE TABLE IF NOT EXISTS cursors (key TEXT PRIMARY KEY, value INTEGER NOT NULL)",
     """CREATE TABLE IF NOT EXISTS sessions (
         local_id TEXT PRIMARY KEY, runtime TEXT NOT NULL, server_id TEXT NOT NULL, parent_local_id TEXT,
@@ -157,6 +163,12 @@ class Store:
         with closing(self._conn()) as c:
             for stmt in SCHEMA:
                 c.execute(stmt)
+            cols = {r["name"] for r in c.execute("PRAGMA table_info(inbox)").fetchall()}
+            if "evidence" not in cols:  # stores created by older versions
+                c.execute("ALTER TABLE inbox ADD COLUMN evidence TEXT")
+        for f in (self.path, Path(f"{self.path}-wal"), Path(f"{self.path}-shm")):  # message bodies: owner only
+            if f.exists() and f.stat().st_mode & 0o077:
+                f.chmod(0o600)
 
     def _conn(self) -> sqlite3.Connection:
         c = sqlite3.connect(self.path, timeout=15, isolation_level=None)
@@ -220,7 +232,14 @@ class Store:
             (*states, max_priority),
         )
 
-    def mark(self, ids: list[int], state: str, session: str | None = None, via: str | None = None) -> None:
+    def mark(
+        self,
+        ids: list[int],
+        state: str,
+        session: str | None = None,
+        via: str | None = None,
+        evidence: dict[str, Any] | None = None,
+    ) -> None:
         order = ["delivered_to_supervisor", "injected_to_runtime", "acknowledged", "processed"]
         with closing(self._conn()) as c:
             for mid in ids:
@@ -229,17 +248,24 @@ class Store:
                     continue
                 c.execute(
                     "UPDATE inbox SET state = ?, injected_at = COALESCE(injected_at, CASE WHEN ? = 'injected_to_runtime' "
-                    "THEN ? END), injected_session = COALESCE(?, injected_session), injected_via = COALESCE(?, injected_via) "
-                    "WHERE message_id = ?",
-                    (state, state, time.time(), session, via, mid),
+                    "THEN ? END), injected_session = COALESCE(?, injected_session), injected_via = COALESCE(?, injected_via), "
+                    "evidence = COALESCE(?, evidence) WHERE message_id = ?",
+                    (state, state, time.time(), session, via, json.dumps(evidence) if evidence else None, mid),
                 )
 
-    def unreported(self) -> dict[str, list[int]]:
-        """State reached locally but not yet confirmed to the server (retried until the server accepts)."""
-        out: dict[str, list[int]] = {}
-        for r in self.q("SELECT message_id, state, reported FROM inbox WHERE state <> reported AND message_id > 0"):
-            out.setdefault(r["state"], []).append(int(r["message_id"]))
-        return out
+    def unreported(self) -> list[dict[str, Any]]:
+        """States reached locally but not yet confirmed to the server, grouped by (state, session, evidence)."""
+        groups: dict[tuple[str, str | None, str | None], list[int]] = {}
+        for r in self.q(
+            "SELECT message_id, state, injected_session, evidence FROM inbox WHERE state <> reported AND message_id > 0 "
+            "ORDER BY message_id"
+        ):
+            sid = r["injected_session"] if r["state"] != "delivered_to_supervisor" else None
+            groups.setdefault((r["state"], sid, r["evidence"]), []).append(int(r["message_id"]))
+        return [
+            {"state": st, "session_id": sid, "evidence": json.loads(ev) if ev else None, "ids": ids}
+            for (st, sid, ev), ids in groups.items()
+        ]
 
     def set_reported(self, ids: list[int], state: str) -> None:
         with closing(self._conn()) as c:

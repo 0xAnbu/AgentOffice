@@ -100,7 +100,8 @@ def _ensure_session(
 
 
 def _inject(store: Store, api: Api | None, s: dict[str, Any] | None, msgs: list[dict[str, Any]], via: str) -> None:
-    ids = [int(m["message_id"]) for m in msgs]
+    # Only what render() actually showed the model counts as injected; the rest stays pending for the next safe point.
+    ids = [int(m["message_id"]) for m in msgs[:MAX_INJECT]]
     store.mark(ids, "injected_to_runtime", session=(s or {}).get("server_id"), via=via)
     if api is not None and ids:
         try:  # best effort; the supervisor retries anything unreported

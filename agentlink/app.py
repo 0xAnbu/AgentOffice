@@ -85,19 +85,22 @@ async def _reconcile_loop() -> None:
     from .hub import get_hub
     from .recovery import reconcile
 
-    hub = await run_in_threadpool(get_hub)
-    interval = hub.settings.reconcile_interval
-    if interval <= 0:
-        return
-    log.info("recovery supervisor running every %.1fs", interval)
+    hub = None
+    interval = 5.0
     while True:
         try:
+            if hub is None:  # inside the try: a failed first start (e.g. database locked) is retried, not fatal
+                hub = await run_in_threadpool(get_hub)
+                interval = hub.settings.reconcile_interval
+                if interval <= 0:
+                    return
+                log.info("recovery supervisor running every %.1fs", interval)
             stats = await run_in_threadpool(reconcile, hub.db, hub.settings)
             if any(stats.values()):
                 hub.notifier.bump()
         except Exception:  # keep supervising; the error is logged and the next pass retries
             log.exception("reconcile pass failed")
-        await asyncio.sleep(interval)
+        await asyncio.sleep(interval if hub is not None else 1.0)  # retry a failed start quickly
 
 
 @contextlib.asynccontextmanager

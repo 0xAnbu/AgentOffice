@@ -179,6 +179,17 @@ def heartbeat_session(
     now = now_ms()
     with db.transaction() as tx:
         s = own_session(tx, p, session_id)
+        if not p.is_admin and membership(tx, int(s["project_id"]), p.agent_id) is None:
+            from .recovery import terminate_session
+
+            terminate_session(tx, s, "no longer a project member", "session.ended", p.agent_id)
+            ended = True
+        else:
+            ended = False
+    if ended:  # committed above; then refuse like any ended session
+        raise Conflict(f"session {session_id} has ended: not a member of its project", reason="session_ended")
+    with db.transaction() as tx:
+        s = own_session(tx, p, session_id)
         if derived_status(s, now, settings) == "offline":
             # Expired but not yet reconciled: the reconciler decides; a late heartbeat revives liveness only.
             pass

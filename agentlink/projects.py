@@ -106,6 +106,22 @@ def set_project_member(db: Database, p: Principal, ident: str, payload: dict[str
                 (pr["id"], agent["id"], role),
             )
         else:
+            from .recovery import orphan_task, terminate_session
+
+            # Removal revokes authority now: the agent's sessions in this project end (their tasks are orphaned, their
+            # leases dropped, a coordinator role is lost), and legacy claims without a session are orphaned too.
+            for s in tx.query(
+                "SELECT * FROM sessions WHERE agent_id = ? AND project_id = ? AND ended_at IS NULL ORDER BY parent_id IS NOT NULL",
+                (agent["id"], pr["id"]),
+            ):
+                terminate_session(tx, s, "removed from project", "session.ended", p.agent_id)
+            now = now_ms()
+            for t in tx.query(
+                "SELECT t.* FROM tasks t JOIN channels c ON c.id = t.channel_id WHERE c.project_id = ? AND t.assignee_id = ? "
+                "AND t.status IN ('claimed', 'in_progress', 'blocked', 'review')",
+                (pr["id"], agent["id"]),
+            ):
+                orphan_task(tx, t, "holder removed from project", now)
             tx.execute("DELETE FROM project_members WHERE project_id = ? AND agent_id = ?", (pr["id"], agent["id"]))
             tx.execute(
                 "DELETE FROM members WHERE agent_id = ? AND channel_id IN (SELECT id FROM channels WHERE project_id = ?)",

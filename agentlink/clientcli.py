@@ -290,7 +290,7 @@ def _report(
     api: Api, store: Store, ids: list[int], state: str, sid: str | None, evidence: dict[str, Any] | None = None
 ) -> Any:
     real = [i for i in ids if i > 0]
-    store.mark(ids, state, sid)
+    store.mark(ids, state, sid, evidence=evidence)  # kept so a failed POST is retried with the same evidence
     if not real:
         return {"local_only": ids}
     r = api.call(

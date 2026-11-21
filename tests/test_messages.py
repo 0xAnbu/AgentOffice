@@ -136,7 +136,8 @@ def test_feed_covers_all_visible_channels(world: World) -> None:
 
 def test_members_can_create_channels_and_invite(world: World) -> None:
     c = world.c
-    r = c.post("/api/channels", json={"name": "feature-x", "repo": "acme/app"}, headers=world.h("alice"))
+    # Agent Office: binding a repo is a project-admin decision (see test_review_fixes); plain channels stay open to members
+    r = c.post("/api/channels", json={"name": "feature-x"}, headers=world.h("alice"))
     assert r.status_code == 200 and r.json()["members"] == ["alice"]
     assert c.post("/api/channels/feature-x/members", json={"agent": "bob"}, headers=world.h("alice")).status_code == 200
     assert world.post("bob", "joined", channel="feature-x").status_code == 200
