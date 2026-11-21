@@ -1,25 +1,29 @@
-// LA OFICINA: los datos, quién está dónde, lo que camina, los rótulos, la cámara y el bucle de dibujo.
+// AGENT OFFICE — the building: data from the backend, who is on which floor, what walks, the labels, the camera and the
+// render loop. Evolved from oficina-virtual's oficina.js (MIT, Magma Consulting Group): the render pipeline, the camera,
+// the procedural characters, their poses and the errand animations are the originals. What changed: the data source
+// (the Agent Office API + event log, never a simulation), several floors stacked as a sectioned building (one floor per
+// specialization, configurable), elevators between floors, labels with runtime/owner/task, and the Activity Center.
 //
-// Liviana a propósito: a 30 cuadros como mucho, a 60 solo mientras la cámara se mueve, y se detiene del todo, dibujo y
-// consultas, mientras la pestaña no se ve. Solo lee lo que le da el servidor (/api/oficina): no escribe nada.
+// Visualization plane only: it reads; it never changes coordination state, and agents never depend on it.
 import * as THREE from './vendor/three.module.min.js';
 import { OrbitControls } from './vendor/OrbitControls.js';
-import { distribuir, caminoEntre, enRuta, hash, D, SALA, CORREDOR } from './plano3d.js';
-import { crearMundo, ALTURA } from './mundo.js';
+import { distribuir, caminoEntre, enRuta, hash, D, NUCLEO, SALA, CORREDOR } from './plano3d.js';
+import { crearMundo } from './mundo.js';
 import { crearPersonas } from './personas.js';
 import * as TX from './texturas.js';
 import { crearPost } from './post.js';
+import { conectar, aEdificio, sesionDeAgente, token, clasificar } from './datos.js';
+import { crearActividad } from './actividad.js';
 
 const $ = (s) => document.querySelector(s);
 const oficinaEl = $('.oficina');
 const lienzo = $('.escena'), capaRotulos = $('.rotulos');
-const resumenEl = $('.resumen'), filasEl = $('.filas'), zoomEl = $('.zoom');
+const resumenEl = $('.resumen'), zoomEl = $('.zoom');
 const reducido = matchMedia('(prefers-reduced-motion: reduce)');
 const params = new URLSearchParams(location.search);
 
-const CONSULTA_MS = 2500;
 const PASO = 1.45, PASO_RECADO = 1.95;       // metros por segundo: andando y llevando algo
-const ABIERTOS = new Set(['nuevo', 'visto', 'en_curso', 'requiere_ok']);
+const PLANTA = 5.6;                           // de una planta a la siguiente: losa + 3,3 m de muros + aire para ver dentro desde el lado
 const TINTA = { dia: ['#3A3A3C', '#8E8E93', '#1C1C1E', '#E5E5EA'], noche: ['#D1D5DB', '#FFFFFF', '#8E96A3', '#FFFFFF'] };
 const MANOS = { terminal: 'teclear', escribiendo: 'teclear', equipo: 'teclear', leyendo: 'raton', navegador: 'raton', pensando: 'pensar' };
 
@@ -119,40 +123,40 @@ function entorno(noche) {
   return rt.texture;
 }
 
+
 // ============================================================================================ el estado
-let datos = null, plano = null, mundo = null, tropa = null, firma = '';
+let datos = null;                 // { pisos: [...], sesiones: Map } from the snapshot
+let firma = '';
+let pisos = [];                   // [{ key, nombre, y, plano, mundo, tropa }]  index 0 = ground floor
+const pisoDe = new Map();         // slug (session id) -> floor index
 const rotulos = new Map();
 const gente = new Map();          // slug -> lo que hace la persona ahora
-const vistos = new Map();         // id del encargo -> estado
-const pedidosVistos = new Set();
 const enCaminoA = new Map();      // slug -> hojas que vienen en camino (todavía no están en su bandeja)
 const caidas = new Map();         // slug -> instante en que le cayó una hoja
-const pulsos = new Map();         // slug -> instante en que le llegó un pedido de la app
-const vuelos = [];                // lo que va por el aire de una mano a una bandeja
-let primera = true;
+const pulsos = new Map();         // slug -> instante en que le llegó un mensaje
+const marcas = new Map();         // slug -> { clase, hasta } indicador temporal (nuevo coordinador, éxito)
+const vuelos = [];                // lo que va por el aire de una mano a una bandeja (coordenadas del mundo)
 let resumen = null;
 let encima = null;
 let reloj = 0;
+let actividad = null;
 
-const paletaDe = (slug) => (slug === 'dueno' ? TINTA[tema] : datos?.puestos?.[slug]?.paleta || TINTA[tema]);
-/** El nombre de la persona y, al lado, su cargo (los dos salen de oficina.config.json). */
-const nombreVisual = (slug) => {
-  const s = datos?.puestos?.[slug] || {};
-  return { nombre: s.alias || s.nombre || slug, cargo: s.alias ? s.nombre : '', genero: s.genero };
-};
+const P = (slug) => datos?.sesiones.get(slug);
+const PU = (slug) => { const k = pisoDe.get(slug); return k === undefined ? null : pisos[k].plano.puestos[slug]; };
+const aMundo = (k, x, y, z) => new THREE.Vector3(x, y, z).add(pisos[k].mundo.grupo.position);
+const paletaDe = (slug) => P(slug)?.paleta || TINTA[tema];
+const nombreVisual = (slug) => { const s = P(slug) || {}; return { nombre: s.nombre || slug, cargo: s.owner || '', genero: s.genero }; };
 const esVoz = (tipo) => tipo === 'voz' || tipo === 'voz-respuesta';
 
 // ============================================================================================ la cámara
-let casa = null;            // la vista de toda la oficina
+let casa = null;            // la vista de todo el edificio
 let vuelo = null;
 let movidaEn = 0;
-const centroOficina = new THREE.Vector3(0, 1.0, 0);
 
-function cajaOficina() {
-  const { WT } = plano;
-  return new THREE.Box3(new THREE.Vector3(-WT / 2 - 1, -0.6, -D / 2 - 1), new THREE.Vector3(WT / 2 + 1, 3.3, D / 2 + 1));
+function cajaEdificio() {
+  const { WT } = pisos[0].plano;
+  return new THREE.Box3(new THREE.Vector3(-WT / 2 - 1, -0.6, -D / 2 - 1), new THREE.Vector3(WT / 2 + 1, (pisos.length - 1) * PLANTA + 3.3, D / 2 + 1));
 }
-/** Las ocho esquinas de una caja (o de una lista de puntos) caben en el área libre de la pantalla. */
 function distanciaQueEncuadra(caja, objetivo, az, polar, aire = 0.9) {
   const puntos = [];
   for (const x of [caja.min.x, caja.max.x]) for (const y of [caja.min.y, caja.max.y]) for (const z of [caja.min.z, caja.max.z]) puntos.push(new THREE.Vector3(x, y, z));
@@ -194,19 +198,26 @@ function vistaQueEnmarca(caja, az = 0.62, polar = 0.93, aire = 0.92) {
   objetivo.addScaledVector(arribaPantalla, dy * altoMundo);
   return { objetivo, az, polar, d };
 }
-const vistaCasa = () => vistaQueEnmarca(cajaOficina());
-function vistaDeZona(z) {
-  const { CX, CY } = mundo;
-  const caja = new THREE.Box3(new THREE.Vector3(z.x0 - CX, 0, z.y0 - CY), new THREE.Vector3(z.x1 - CX, 2.2, z.y1 - CY));
-  return vistaQueEnmarca(caja, 0.5, 0.86, 0.9);
+
+// Dollhouse view: from the side, slightly above, so every floor is visible through its cut-away front.
+const vistaCasa = () => vistaQueEnmarca(cajaEdificio(), 0.32, 1.3, 0.94);
+function vistaDePiso(k) {
+  const { WT } = pisos[k].plano;
+  const y = pisos[k].y;
+  return vistaQueEnmarca(new THREE.Box3(new THREE.Vector3(-WT / 2, y, -D / 2), new THREE.Vector3(WT / 2, y + 2.4, D / 2)), 0.4, 1.12, 0.92);
+}
+function vistaDeZona(z, k) {
+  const { CX, CY } = pisos[k].mundo;
+  const y = pisos[k].y;
+  return vistaQueEnmarca(new THREE.Box3(new THREE.Vector3(z.x0 - CX, y, z.y0 - CY), new THREE.Vector3(z.x1 - CX, y + 2.2, z.y1 - CY)), 0.5, 0.95, 0.9);
 }
 function vistaDePuesto(slug) {
-  const { CX, CY } = mundo;
-  const p = plano.puestos[slug];
+  const k = gente.get(slug)?.piso ?? pisoDe.get(slug);
+  const { CX, CY } = pisos[k].mundo;
+  const p = PU(slug);
   const g = gente.get(slug);
-  const x = (g?.x ?? p.x) - CX, z = (g?.y ?? p.y) - CY;
-  const caja = new THREE.Box3(new THREE.Vector3(x - 1.5, 0, z - 1.6), new THREE.Vector3(x + 1.5, 2.1, z + 1.4));
-  return vistaQueEnmarca(caja, 0.42, 0.98, 0.6);
+  const x = (g?.x ?? p.x) - CX, z = (g?.y ?? p.y) - CY, y = pisos[k].y;
+  return vistaQueEnmarca(new THREE.Box3(new THREE.Vector3(x - 1.5, y, z - 1.6), new THREE.Vector3(x + 1.5, y + 2.1, z + 1.4)), 0.42, 0.98, 0.6);
 }
 function vistaActual() {
   const off = camara.position.clone().sub(controles.target);
@@ -237,6 +248,7 @@ const estaEnCasa = () => {
 };
 controles.addEventListener('change', () => { movidaEn = performance.now(); });
 
+
 function encuadrar() {
   const dpr = Number(params.get('dpr')) || Math.min(window.devicePixelRatio || 1, 2);
   renderer.setPixelRatio(dpr);
@@ -244,7 +256,7 @@ function encuadrar() {
   post.tamano();
   camara.aspect = innerWidth / innerHeight;
   camara.updateProjectionMatrix();
-  if (!plano) return;
+  if (!pisos.length) return;
   const enCasa = !casa || estaEnCasa();
   casa = vistaCasa();
   if (enCasa && !vuelo) { controles.target.copy(casa.objetivo); ponerEn(camara, casa.objetivo, casa.az, casa.polar, casa.d); controles.update(); }
@@ -276,7 +288,7 @@ function ponerTema(nuevo, guardar) {
   const dir = noche ? new THREE.Vector3(-0.18, 1, 0.24) : new THREE.Vector3(-0.62, 1, 0.66);
   sol.position.copy(dir.normalize().multiplyScalar(70));
   renderer.toneMappingExposure = noche ? 1.08 : 1.0;
-  mundo?.noche(noche);
+  for (const P2 of pisos) P2.mundo.noche(noche);
   post.ponerNoche(noche);
   renderer.shadowMap.needsUpdate = true;
 }
@@ -288,35 +300,34 @@ for (const b of document.querySelectorAll('.tema button')) {
   });
 }
 
+
 // ============================================================================================ quién está dónde
-// Cada uno se queda en su puesto, sentado: trabajando (tecleando, con el ratón o pensando), esperándote (girado en la silla,
-// levanta la mano a ratos) o libre (recostado, con un café). Cerrado: la silla queda vacía. Solo se levanta para llevar algo
-// (un encargo, un pedido) y vuelve a sentarse.
+// Each one stays at their desk: working (typing), waiting / without progress (turned, hand up now and then) or idle (with a
+// coffee). Disconnected: the chair stays empty. They only stand up to carry something to someone (a message, a task)
+// — taking the elevator when the recipient works on another floor — and then sit down again.
 const SENTADAS = new Set(['sentado', 'sofa', 'taburete', 'tumbado']);
 
-/** El sitio donde debería estar: { tipo, x, y, rumbo, acceso, pose }; o { tipo: 'fuera' } si su chat está cerrado. */
 function destinoDe(slug) {
-  const s = datos.puestos[slug] || {};
-  const p = plano.puestos[slug];
+  const s = P(slug) || {};
+  const p = PU(slug);
   if (!p) return null;
-  const sentado = (manos, extra = {}) => ({ tipo: 'escritorio', x: p.x, y: p.y, rumbo: p.yaw, acceso: p.acceso, pose: { que: 'sentado', manos, ...extra } });
-  if (s.persona) return sentado('raton');
+  const sentado = (manos, extra = {}) => ({ tipo: 'escritorio', piso: pisoDe.get(slug), x: p.x, y: p.y, rumbo: p.yaw, acceso: p.acceso, pose: { que: 'sentado', manos, ...extra } });
   if (s.estado === 'trabajando') return sentado(MANOS[s.actividad] || 'teclear');
   if (s.estado === 'espera') return sentado('saludar');
-  if (s.estado === 'libre' || slug === 'recepcion') return sentado('cafe', { lleva: 'taza' });
+  if (s.estado === 'libre') return sentado('cafe', { lleva: 'taza' });
   return { tipo: 'fuera' };
 }
 
 function nuevaPersona(slug) {
-  const g = { slug, visible: false, x: 0, y: 0, rumbo: 0, modo: 'quieto', destino: null, recados: [], pose: { que: 'de_pie' }, s: 0, paso: 0 };
+  const g = { slug, piso: pisoDe.get(slug) ?? 0, visible: false, x: 0, y: 0, rumbo: 0, modo: 'quieto', destino: null, recados: [], pose: { que: 'de_pie' }, s: 0, paso: 0 };
   gente.set(slug, g);
   return g;
 }
 
-/** Pone a cada uno en su sitio sin caminar (la primera vez que se abre la página). */
 function ubicarDeUna() {
-  for (const slug of Object.keys(plano.puestos)) {
+  for (const slug of pisoDe.keys()) {
     const g = gente.get(slug) || nuevaPersona(slug);
+    g.piso = pisoDe.get(slug);
     const d = destinoDe(slug);
     g.destino = d;
     if (!d || d.tipo === 'fuera') { g.visible = false; g.modo = 'fuera'; continue; }
@@ -324,52 +335,77 @@ function ubicarDeUna() {
   }
 }
 
-/** Arranca a caminar hacia `meta` ({x, y}); `luego` se corre al llegar. */
 function caminar(g, meta, rapido, luego) {
-  const ruta = caminoEntre(plano.nav, { x: g.x, y: g.y }, meta);
+  const ruta = caminoEntre(pisos[g.piso].plano.nav, { x: g.x, y: g.y }, meta);
   g.modo = 'caminando';
   g.ruta = ruta;
   g.recorrido = 0;
   g.vel = rapido ? PASO_RECADO : PASO;
   g.luego = luego;
 }
-/** Lo siguiente que hace alguien que está quieto: un recado pendiente, o volver a su silla, o irse. */
+/** The elevator door of a floor, and the spot in front of it. */
+const ascensor = (k) => { const a = pisos[k].plano.nucleo.ascensores[0]; return { x: a.x + 0.55, y: a.y }; };
+/** Walk to the elevator, ride (never an instant jump: the cab travels and the doors open on both floors), step out. */
+function tomarAscensor(g, hacia, luego) {
+  caminar(g, ascensor(g.piso), true, () => {
+    const desde = g.piso;
+    pisos[desde].mundo.abrirAscensor(0, reloj, 1.4);
+    g.modo = 'ascensor';
+    g.transito = { desde, hacia, t0: reloj + 0.6, dur: 1.1 + 0.55 * Math.abs(hacia - desde), luego };
+  });
+}
 function decidir(g, t) {
-  if (g.modo === 'caminando' || g.modo === 'levantandose' || g.modo === 'sentandose' || g.modo === 'entregando' || g.modo === 'acercandose') return;
+  if (['caminando', 'levantandose', 'sentandose', 'entregando', 'acercandose', 'ascensor'].includes(g.modo)) return;
   const recado = g.recados[0];
   const destino = destinoDe(g.slug);
-  const p = plano.puestos[g.slug];
+  const p = PU(g.slug);
+  if (!p) return;
+  const casaPiso = pisoDe.get(g.slug);
   const sentado = g.s > 0.5;
   if (!recado) {
     if (!destino || destino.tipo === 'fuera') {
-      // Su chat se cerró: se levanta y la silla queda vacía.
       if (g.visible && sentado) { g.modo = 'levantandose'; g.t0 = t; return; }
       if (g.visible) { g.visible = false; g.modo = 'fuera'; }
       return;
     }
     g.destino = destino;
-    if (g.visible && Math.hypot(g.x - destino.x, g.y - destino.y) < 0.05 && sentado) { g.pose = destino.pose; return; }
+    if (g.visible && g.piso === casaPiso && Math.hypot(g.x - destino.x, g.y - destino.y) < 0.05 && sentado) { g.pose = destino.pose; return; }
   }
   if (!g.visible) {
-    // Llega: aparece de pie junto a su silla y se sienta (o sale de ahí mismo a llevar lo que tiene).
+    g.piso = casaPiso;
     Object.assign(g, { visible: true, x: p.acceso.x, y: p.acceso.y, rumbo: p.yaw, s: 0, pose: { que: 'de_pie' } });
     if (!recado) { g.modo = 'acercandose'; g.t0 = t; g.desde = { x: g.x, y: g.y, rumbo: g.rumbo }; }
     return;
   }
-  // Sentado y con algo que llevar: primero se levanta.
   if (sentado) { g.modo = 'levantandose'; g.t0 = t; return; }
   if (recado) {
-    const B = plano.puestos[recado.para];
-    const alDueno = recado.para === 'dueno';
-    const meta = alDueno ? { x: B.x + 1.05, y: B.y + 0.95 } : B.tipo === 'recepcion' ? { x: B.x + 2.0, y: B.y } : { x: B.x + 0.85, y: B.y + 0.45 };
+    const kB = pisoDe.get(recado.para);
+    const B = PU(recado.para);
+    if (!B) { g.recados.shift(); return; }
     g.pose = { que: 'caminar', lleva: esVoz(recado.tipo) ? 'nota' : 'carpeta' };
-    caminar(g, meta, true, () => { g.modo = 'entregando'; g.t0 = reloj; g.rumboMeta = Math.atan2(B.x - g.x, B.y - g.y); });
+    if (kB !== g.piso) { tomarAscensor(g, kB, null); return; }
+    caminar(g, { x: B.x + 0.85, y: B.y + 0.45 }, true, () => { g.modo = 'entregando'; g.t0 = reloj; g.rumboMeta = Math.atan2(B.x - g.x, B.y - g.y); });
     return;
   }
-  // De pie y sin nada que llevar: de vuelta a su silla.
   if (!destino || destino.tipo === 'fuera') return;
   g.pose = { que: 'caminar' };
+  if (g.piso !== casaPiso) { tomarAscensor(g, casaPiso, null); return; }
   caminar(g, destino.acceso, false, () => { g.modo = 'acercandose'; g.t0 = reloj; g.desde = { x: g.x, y: g.y, rumbo: g.rumbo }; });
+}
+
+function enAscensor(g, t) {
+  const tr = g.transito;
+  if (t < tr.t0) return;
+  g.visible = false;                          // inside the cab: the cab mesh shows the ride
+  const u = clamp((t - tr.t0) / tr.dur, 0, 1);
+  cabinas.set(g.slug, { desde: tr.desde, hacia: tr.hacia, u: suave(u) });
+  if (u >= 1) {
+    cabinas.delete(g.slug);
+    g.piso = tr.hacia;
+    const e = ascensor(g.piso);
+    pisos[g.piso].mundo.abrirAscensor(0, t, 1.4);
+    Object.assign(g, { visible: true, x: e.x, y: e.y, modo: 'quieto', transito: null });
+  }
 }
 
 function simular(t, dt) {
@@ -388,7 +424,7 @@ function simular(t, dt) {
       g.s = 1 - suave(u);
       if (u >= 1) {
         // Se aparta del asiento hasta su punto de acceso.
-        const d = plano.puestos[g.slug];
+        const d = PU(g.slug);
         g.modo = 'quieto';
         g.pose = { que: 'de_pie' };
         if (d?.acceso) { g.x = d.acceso.x; g.y = d.acceso.y; }
@@ -425,67 +461,59 @@ function simular(t, dt) {
   }
 }
 
-/** Lo que entrega vuela de la mano a la bandeja (un encargo) o a la esfera de quien lo recibe (una nota de voz). */
+
+/** What is handed over flies from the hand to the tray (a task) or to the recipient's sphere (a message). World coords. */
 function lanzarVuelo(g, recado, t) {
-  const B = plano.puestos[recado.para];
-  const per = tropa.porSlug.get(g.slug);
-  const desde = per?.manoEn ? per.manoEn.clone() : new THREE.Vector3(g.x, 1.0, g.y);
+  const kB = pisoDe.get(recado.para);
+  const B = PU(recado.para);
+  const per = personaDe(g.slug);
+  const desde = per?.manoEn ? aMundo(g.piso, per.manoEn.x, per.manoEn.y, per.manoEn.z) : aMundo(g.piso, g.x, 1.0, g.y);
   let hasta;
   const voz = esVoz(recado.tipo);
-  if (recado.para === 'dueno') hasta = new THREE.Vector3(B.x + 0.6, 0.8, B.y + 0.25);
-  else if (voz) {
-    const pr = tropa.porSlug.get(recado.para);
-    hasta = pr && !pr.oculto && pr.cabezaEn ? pr.cabezaEn.clone().add(new THREE.Vector3(0, 0.32, 0)) : new THREE.Vector3(B.x, 1.6, B.y);
+  if (voz) {
+    const pr = personaDe(recado.para);
+    hasta = pr && !pr.oculto && pr.cabezaEn ? aMundo(kB, pr.cabezaEn.x, pr.cabezaEn.y + 0.32, pr.cabezaEn.z) : aMundo(kB, B.x, 1.6, B.y);
   } else {
-    const b = mundo.bandejas.get(recado.para);
-    hasta = b ? b.pos.clone().add(new THREE.Vector3(0, 0.02, 0)) : new THREE.Vector3(B.x, 0.8, B.y - 0.3);
+    const b = pisos[kB].mundo.bandejas.get(recado.para);
+    hasta = b ? aMundo(kB, b.pos.x, b.pos.y + 0.02, b.pos.z) : aMundo(kB, B.x, 0.8, B.y - 0.3);
   }
   vuelos.push({ desde, hasta, t0: t, dur: 0.62, voz, para: recado.para, tipo: recado.tipo, color: paletaDe(g.slug)[0] });
 }
 
-// ============================================================================================ lo que viene de la base
+// ============================================================================================ lo que viene del backend
+/** Visual queue, independent of the real message queue: at most three pending errands per person; never blocks. */
 function lanzar(m) {
   const { de, para, tipo } = m;
-  if (!plano?.puestos[de] || !plano?.puestos[para] || de === para) return;
+  if (!PU(de) || !PU(para) || de === para) return;
   const g = gente.get(de) || nuevaPersona(de);
+  if (!g.visible && P(de)?.estado === 'cerrado') { pulsos.set(para, reloj); return; } // sender offline: just pulse the recipient
   if (tipo === 'encargo') enCaminoA.set(para, (enCaminoA.get(para) || 0) + 1);
   g.recados.push(m);
-  // Si se acumulan, solo los últimos tres: la oficina cuenta lo que pasa, no hace fila.
   while (g.recados.length > 3) {
-    const fuera = g.recados.splice(g.modo === 'caminando' || g.modo === 'entregando' ? 1 : 0, 1)[0];
+    const fuera = g.recados.splice(g.modo === 'caminando' || g.modo === 'entregando' || g.modo === 'ascensor' ? 1 : 0, 1)[0];
     if (fuera?.tipo === 'encargo') enCaminoA.set(fuera.para, Math.max(0, (enCaminoA.get(fuera.para) || 1) - 1));
   }
 }
-const movEncargo = (e, tipo) => (tipo === 'respuesta'
-  ? { de: e.para, para: e.de, tipo, cuando: e.cerrado || e.creado, texto: e.titulo }
-  : { de: e.de, para: e.para, tipo, cuando: e.creado, texto: e.titulo });
+const sesionDe = (e) => (e.session_id && P(e.session_id) ? e.session_id : e.actor ? sesionDeAgente(datos.sesiones, e.actor) : null);
+function marcar(slug, clase, segundos) { if (slug) marcas.set(slug, { clase, hasta: reloj + segundos }); }
 
-function procesar(encargos, pedidos) {
-  if (primera) {
-    for (const e of encargos) vistos.set(e.id, e.estado);
-    for (const p of pedidos) pedidosVistos.add(p.id);
-    const eventos = [
-      ...encargos.flatMap((e) => [movEncargo(e, 'encargo'), ...(!ABIERTOS.has(e.estado) && e.cerrado ? [movEncargo(e, 'respuesta')] : [])]),
-      ...pedidos,
-    ].sort((a, b) => String(a.cuando).localeCompare(String(b.cuando)));
-    for (const ev of eventos.slice(-5)) alRegistro(ev);
-    const ultimo = eventos[eventos.length - 1];
-    if (ultimo && minutosDesde(ultimo.cuando) < 15) lanzar(ultimo);
-    primera = false;
-    return;
-  }
-  const nuevos = [];
-  for (const e of encargos) {
-    const antes = vistos.get(e.id);
-    if (antes === undefined) { vistos.set(e.id, e.estado); nuevos.push(movEncargo(e, 'encargo')); }
-    else if (antes !== e.estado) {
-      vistos.set(e.id, e.estado);
-      if (ABIERTOS.has(antes) && !ABIERTOS.has(e.estado)) nuevos.push(movEncargo(e, 'respuesta'));
+/** Real events -> animations (§8.5). Replayed history is listed in the Activity Center but not animated. */
+function alEvento(e) {
+  if (!datos || !pisos.length) return;
+  const de = sesionDe(e);
+  if (e.type === 'message.created') {
+    for (const quien of e.data?.mentions || []) {
+      const para = sesionDeAgente(datos.sesiones, quien);
+      const kind = e.data?.kind;
+      if (de && para) lanzar({ de, para, tipo: kind === 'review' || kind === 'task' || kind === 'handoff' ? 'encargo' : 'voz' });
+      else if (para) pulsos.set(para, reloj);
     }
-  }
-  for (const p of pedidos) if (!pedidosVistos.has(p.id)) { pedidosVistos.add(p.id); nuevos.push(p); }
-  nuevos.sort((a, b) => String(a.cuando).localeCompare(String(b.cuando)));
-  for (const m of nuevos) { lanzar(m); alRegistro(m); }
+  } else if (e.type === 'task.updated' && e.data?.assignee) {
+    const para = sesionDeAgente(datos.sesiones, e.data.assignee);
+    if (de && para) lanzar({ de, para, tipo: 'encargo' });
+  } else if (e.type === 'task.updated' && e.data?.status === 'done') marcar(de, 'exito', 4);
+  else if (e.type === 'coordinator.accepted') marcar(e.session_id, 'nuevo-coordinador', 10);
+  else if (e.type === 'coordinator.offered') marcar(e.session_id, 'candidato', 6);
 }
 
 // ============================================================================================ los rótulos
@@ -495,8 +523,13 @@ function rotuloDe(slug) {
   el = document.createElement('div');
   el.className = 'rotulo';
   el.setAttribute('role', 'listitem');
-  el.innerHTML = '<div class="nombre"><span class="quien"></span><span class="cargo"></span></div><div class="estado"></div><div class="detalle"></div><div class="mas"></div>';
+  for (const c of ['nombre', 'estado', 'detalle', 'mas']) { const d = document.createElement('div'); d.className = c; el.append(d); }
+  const q = document.createElement('span'); q.className = 'quien';
+  const insignias = document.createElement('span'); insignias.className = 'insignias';
+  const cargo = document.createElement('span'); cargo.className = 'cargo';
+  el.querySelector('.nombre').append(insignias, q, cargo);
   el.style.setProperty('--i', String(rotulos.size));
+  el.addEventListener('click', () => { volarA(vistaDePuesto(slug)); actividad?.filtrarAgente(P(slug)?.nombre); });
   capaRotulos.append(el);
   rotulos.set(slug, el);
   return el;
@@ -505,47 +538,58 @@ function escribir(el, sel, texto) {
   const n = el.querySelector(sel);
   if (n.textContent !== texto) { n.textContent = texto; el._medida = null; }
 }
+function insignias(el, s) {
+  const cont = el.querySelector('.insignias');
+  const clave = `${s.runtime}|${s.coordinador}|${s.sub}|${s.candidato}|${s.bloqueada}`;
+  if (cont._k === clave) return;
+  cont._k = clave;
+  cont.replaceChildren();
+  const add = (cls, txt, title) => { const b = document.createElement('span'); b.className = `insignia ${cls}`; b.textContent = txt; b.title = title; cont.append(b); };
+  add('runtime', s.runtime, `Runtime: ${s.sesion.runtime}${s.sesion.model ? ` · ${s.sesion.model}` : ''}`);
+  if (s.coordinador) add('coord', '★', 'Coordinador activo');
+  if (s.candidato) add('cand', '☆', 'Coordinador propuesto (pendiente de aceptar)');
+  if (s.sub) add('sub', 'sub', 'Subagente');
+  if (s.bloqueada) add('aviso', '!', 'Tarea bloqueada');
+  el._medida = null;
+}
 
 const estadosAntes = new Map();
 function pintarRotulos() {
-  for (const [slug, s] of Object.entries(datos.puestos)) {
-    if (!plano.puestos[slug]) continue;
+  for (const [slug, s] of datos.sesiones) {
+    if (!PU(slug)) continue;
     const el = rotuloDe(slug);
-    el.style.setProperty('--c', paletaDe(slug)[0]);
+    el.style.setProperty('--c', s.paleta[0]);
     const clave = `${s.estado}|${s.frase}`;
     const cambio = estadosAntes.has(slug) && estadosAntes.get(slug) !== clave;
     estadosAntes.set(slug, clave);
-    el.classList.remove('trabajando', 'espera', 'libre', 'cerrado', 'persona', 'cambia');
-    el.classList.add(s.persona ? 'persona' : s.estado);
+    el.classList.remove('trabajando', 'espera', 'libre', 'cerrado', 'cambia');
+    el.classList.add(s.estado);
+    el.classList.toggle('coordinador', s.coordinador);
+    el.classList.toggle('subagente', s.sub);
     if (cambio) { void el.offsetWidth; el.classList.add('cambia'); }
-    // El nombre de la persona en la maqueta (solo aquí) y, al lado, su cargo de siempre.
-    const v = nombreVisual(slug);
-    escribir(el, '.quien', v.nombre);
-    escribir(el, '.cargo', v.cargo);
-    const quien = v.cargo ? `${v.nombre}, ${v.cargo}` : v.nombre;
-    if (s.persona) {
-      escribir(el, '.estado', s.esperan ? (s.esperan === 1 ? 'Te espera un agente' : `Te esperan ${s.esperan} agentes`) : 'Nadie te espera');
-      escribir(el, '.detalle', '');
-      escribir(el, '.mas', '');
-      el.setAttribute('aria-label', `${quien}: ${el.querySelector('.estado').textContent}`);
-      continue;
-    }
-    const frase = s.estado === 'libre' ? 'Libre' : s.estado === 'cerrado' ? 'Cerrado' : `${s.frase}${s.voz ? ' por voz' : ''}`;
-    escribir(el, '.estado', frase);
-    escribir(el, '.detalle', s.estado === 'trabajando' || s.estado === 'espera' ? (s.detalle && s.detalle !== 'por voz' ? s.detalle : '') : '');
-    const bandejaTxt = s.bandeja ? ` · ${s.bandeja} ${s.bandeja === 1 ? 'encargo' : 'encargos'} en la bandeja` : '';
-    const mas = s.estado === 'cerrado' ? `Último turno ${cuando(s.desde)}${bandejaTxt}`
-      : s.estado === 'libre' ? `Libre ${s.desde ? `desde ${cuando(s.desde)}` : ''}${bandejaTxt}`
-        : `${hace(s.inicio || s.desde)}${bandejaTxt}`;
-    escribir(el, '.mas', mas.trim());
-    el.setAttribute('aria-label', `${quien}: ${frase}${s.detalle ? `, ${s.detalle}` : ''}`);
+    insignias(el, s);
+    escribir(el, '.quien', `${s.nombre}${s.specialization ? ` · ${s.specialization}` : ''}`);
+    escribir(el, '.cargo', s.owner);
+    escribir(el, '.estado', s.frase);
+    escribir(el, '.detalle', s.estado === 'cerrado' ? '' : s.detalle || '');
+    const sesion = s.sesion;
+    escribir(el, '.mas', `${sesion.runtime}${sesion.model ? ` · ${sesion.model}` : ''} · ${hace(new Date(sesion.last_heartbeat_at).toISOString())}`);
+    el.setAttribute('aria-label', `${s.nombre} (${s.runtime}, propietario ${s.owner}): ${s.frase}${s.detalle ? `, ${s.detalle}` : ''}`);
   }
-  for (const [slug, el] of rotulos) if (!datos.puestos[slug] || !plano.puestos[slug]) { el.remove(); rotulos.delete(slug); }
+  for (const [slug, el] of rotulos) if (!datos.sesiones.has(slug) || !PU(slug)) { el.remove(); rotulos.delete(slug); }
 }
 
 const _v = new THREE.Vector3();
+function cabezaMundo(slug) {
+  const g = gente.get(slug);
+  const per = personaDe(slug);
+  const k = g?.piso ?? pisoDe.get(slug);
+  if (g?.visible && per && !per.oculto && per.cabezaEn) return aMundo(k, per.cabezaEn.x, per.cabezaEn.y + 0.12, per.cabezaEn.z);
+  const p = PU(slug);
+  return aMundo(pisoDe.get(slug), p.x, 1.25, p.y);
+}
 function ubicarRotulos() {
-  if (!plano || !mundo) return;
+  if (!pisos.length) return;
   const H = innerHeight, W = innerWidth;
   const tanF = Math.tan(THREE.MathUtils.degToRad(camara.fov / 2));
   const dObjetivo = camara.position.distanceTo(controles.target);
@@ -553,24 +597,19 @@ function ubicarRotulos() {
   const lista = [];
   for (const [slug, el] of rotulos) {
     const g = gente.get(slug);
-    const per = tropa?.porSlug.get(slug);
-    const p = plano.puestos[slug];
-    let x, y, z;
-    if (g?.visible && per && !per.oculto && per.cabezaEn) { x = per.cabezaEn.x; y = per.cabezaEn.y + 0.12; z = per.cabezaEn.z; }
-    else { x = p.x; y = 1.25; z = p.y; }
-    _v.set(x - mundo.CX, y, z - mundo.CY);
+    _v.copy(cabezaMundo(slug));
     const dist = _v.distanceTo(camara.position);
     _v.project(camara);
     const fuera = _v.z > 1 || _v.x < -1.15 || _v.x > 1.15 || _v.y < -1.2 || _v.y > 1.2;
     const sx = (_v.x + 1) / 2 * W, sy = (1 - _v.y) / 2 * H;
     const ppm = H / (2 * dist * tanF);
     const u = clamp(Math.pow(ppm, 0.56) * 8, 36, 96);
+    const m = marcas.get(slug);
+    el.classList.toggle('marca-exito', !!m && m.clase === 'exito' && m.hasta > reloj);
+    el.classList.toggle('marca-coordinador', !!m && m.clase === 'nuevo-coordinador' && m.hasta > reloj);
     lista.push({ el, sx, sy, u, dist, fuera, ausente: !g?.visible });
   }
-  // Los rótulos que se pisan: el más cercano se queda entero; el de atrás sube encima del otro si cabe cerca de su persona, y si
-  // no, se queda solo con el nombre. El tamaño de cada uno se mide de verdad (en unidades de --u) cuando cambia su texto.
   const cerca = capaRotulos.classList.contains('cerca');
-  // Primero los que están (su rótulo manda), después las sillas vacías; entre iguales, el más cercano.
   lista.sort((a, b) => (a.ausente - b.ausente) || (a.dist - b.dist));
   const puestos = [];
   const medir = (el, compacto) => {
@@ -585,27 +624,20 @@ function ubicarRotulos() {
   for (const r of lista) {
     if (r.fuera) { if (!r.el.classList.contains('oculto')) r.el.classList.add('oculto'); continue; }
     r.el.classList.remove('oculto');
-    // La escala va antes de medir: medido con otra, el tamaño sale mal y los rótulos se pisan.
     const us = `${r.u.toFixed(1)}px`;
     if (r.el._u !== us) { r.el.style.setProperty('--u', us); r.el._u = us; }
     const choca = (x, y, w, h) => puestos.find((q) => Math.abs(q.x - x) < (w + q.w) / 2 && y - h < q.y && y > q.y - q.h);
-    let compacto = false;
-    let m = medir(r.el, false);
+    let compacto = !cerca;   // general view: name, state and owner badge only; hover/zoom expands (§8.3)
+    let m = medir(r.el, compacto);
     let w = m.w * r.u, h = m.h * r.u, y = r.sy;
-    // Una silla vacía no se corre: si su nombre pisa a otro, se calla (sale al pasar el cursor por encima).
     if (r.ausente && !r.el.classList.contains('encima') && choca(r.sx, y, w * 1.06, h)) { r.el.classList.add('oculto'); continue; }
-    for (let intento = 0; intento < 4; intento++) {
-      const c = choca(r.sx, y, w, h);
-      if (!c) break;
-      y = c.y - c.h - 3;
-    }
+    for (let intento = 0; intento < 4; intento++) { const c = choca(r.sx, y, w, h); if (!c) break; y = c.y - c.h - 3; }
     if (r.sy - y > r.u * 1.6 || choca(r.sx, y, w, h)) {
       compacto = true;
       m = medir(r.el, true);
       w = m.w * r.u; h = m.h * r.u; y = r.sy;
       for (let intento = 0; intento < 3; intento++) { const c = choca(r.sx, y, w, h); if (!c) break; y = c.y - c.h - 2; }
     }
-    // El nombre de una silla vacía que igual se pisa con otro, se calla (sale al pasar el cursor por encima).
     if (r.ausente && choca(r.sx, y, w, h) && !r.el.classList.contains('encima')) { r.el.classList.add('oculto'); continue; }
     puestos.push({ x: r.sx, y, w, h });
     if (r.el.classList.contains('compacto') !== compacto) r.el.classList.toggle('compacto', compacto);
@@ -613,80 +645,68 @@ function ubicarRotulos() {
     if (r.el._t !== t) { r.el.style.translate = t; r.el._t = t; }
     r.el.style.zIndex = String(1000 - Math.round(r.dist));
   }
+  // floor names, at the west end of each floor
+  for (const [k, el] of letrerosPiso) {
+    const { WT } = pisos[k].plano;
+    _v.set(-WT / 2 - 0.6, pisos[k].y + 1.6, 0).project(camara);
+    el.style.translate = `${((_v.x + 1) / 2 * W).toFixed(1)}px ${((1 - _v.y) / 2 * H).toFixed(1)}px`;
+    el.classList.toggle('oculto', _v.z > 1);
+  }
 }
 
-// ============================================================================================ resumen y registro
+// ============================================================================================ resumen
 function pintarResumen() {
-  const v = Object.values(datos.puestos).filter((s) => !s.persona);
+  const v = [...datos.sesiones.values()];
   const n = (e) => v.filter((s) => s.estado === e).length;
   const d = new Date();
   const partes = [
     `${DIAS[d.getDay()][0].toUpperCase()}${DIAS[d.getDay()].slice(1)} ${d.getDate()} de ${MESES[d.getMonth()]}, ${d.toTimeString().slice(0, 5)}`,
     `<b>${n('trabajando')}</b> trabajando`,
-    `<b>${n('espera')}</b> ${n('espera') === 1 ? 'te espera' : 'te esperan'}`,
+    `<b>${n('espera')}</b> esperando o sin progreso`,
     `<b>${n('libre')}</b> ${n('libre') === 1 ? 'libre' : 'libres'}`,
-    `<b>${n('cerrado')}</b> ${n('cerrado') === 1 ? 'cerrado' : 'cerrados'}`,
+    `<b>${n('cerrado')}</b> ${n('cerrado') === 1 ? 'desconectado' : 'desconectados'}`,
   ];
-  const html = partes.join('<span class="sep">·</span>');
+  const html = partes.join('<span class="sep">·</span>');   // only numbers and fixed words: no untrusted text here
   if (resumenEl.innerHTML !== html) resumenEl.innerHTML = html;
   const r = { trabajando: n('trabajando'), espera: n('espera'), libre: n('libre'), cerrado: n('cerrado') };
   const hora = d.toTimeString().slice(0, 5);
   const f = JSON.stringify(r) + hora;
-  if (f !== resumen) { resumen = f; mundo.pintarTeles(r, hora); }
-}
-const nombreDe = (slug) => datos?.puestos?.[slug]?.nombre || slug;
-function fila(m) {
-  const li = document.createElement('li');
-  li.className = m.tipo;
-  const hora = document.createElement('span'); hora.className = 'hora'; hora.textContent = hhmm(m.cuando);
-  const ruta = document.createElement('span'); ruta.className = 'ruta';
-  const quien = (slug) => {
-    const s = document.createElement('span');
-    const v = nombreVisual(slug);
-    s.textContent = v.nombre;
-    s.style.color = slug === 'dueno' ? 'var(--texto)' : paletaDe(slug)[0];
-    if (v.cargo && slug !== 'recepcion') { const c = document.createElement('span'); c.className = 'cargo'; c.textContent = v.cargo; s.append(c); }
-    return s;
-  };
-  const flecha = document.createElement('span'); flecha.className = 'flecha'; flecha.textContent = '→';
-  ruta.append(quien(m.de), flecha, quien(m.para));
-  const que = document.createElement('span'); que.className = 'que'; que.textContent = m.texto;
-  li.append(hora, ruta, que);
-  return li;
-}
-function alRegistro(m) {
-  filasEl.prepend(fila(m));
-  while (filasEl.children.length > 5) filasEl.lastElementChild.remove();
+  if (f !== resumen) { resumen = f; for (const p of pisos) p.mundo.pintarTeles(r, hora); }
 }
 
-// ============================================================================================ las bandejas y lo que vuela
-let mPilas = null, mVuelos = null;
+// ============================================================================================ las bandejas, lo que vuela y la cabina
+let mPilas = null, mVuelos = null, mNotas = null, mCabina = null, pozo = null;
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
-let slugsBandeja = [];
+let bandejas = [];        // [{ slug, pos (world), rot }]
+const cabinas = new Map();
 function crearBandejasYVuelos() {
-  slugsBandeja = [...mundo.bandejas.keys()];
-  mPilas = new THREE.InstancedMesh(new THREE.BoxGeometry(0.24, 1, 0.19).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: '#F6F3EC', roughness: 0.9, fog: false }), slugsBandeja.length);
-  mPilas.castShadow = false; mPilas.receiveShadow = true;
-  mundo.grupo.add(mPilas);
+  for (const o of [mPilas, mVuelos, mNotas, mCabina, pozo]) if (o) escena.remove(o);
+  bandejas = [];
+  pisos.forEach((P2, k) => { for (const [slug, b] of P2.mundo.bandejas) bandejas.push({ slug, pos: aMundo(k, b.pos.x, b.pos.y, b.pos.z), rot: b.rot }); });
+  mPilas = new THREE.InstancedMesh(new THREE.BoxGeometry(0.24, 1, 0.19).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: '#F6F3EC', roughness: 0.9, fog: false }), Math.max(1, bandejas.length));
+  mPilas.count = bandejas.length;
+  mPilas.receiveShadow = true;
   mVuelos = new THREE.InstancedMesh(new THREE.BoxGeometry(0.24, 0.012, 0.3), new THREE.MeshStandardMaterial({ color: '#F6F3EC', roughness: 0.8, fog: false }), 8);
-  mVuelos.count = 0;
-  mVuelos.frustumCulled = false;
-  mundo.grupo.add(mVuelos);
-  // La nota de voz que vuela es una esfera de luz.
+  mVuelos.count = 0; mVuelos.frustumCulled = false;
   mNotas = new THREE.InstancedMesh(new THREE.SphereGeometry(0.07, 16, 10), new THREE.MeshBasicMaterial({ toneMapped: false, fog: false }), 8);
-  mNotas.count = 0;
-  mNotas.frustumCulled = false;
-  mundo.grupo.add(mNotas);
+  mNotas.count = 0; mNotas.frustumCulled = false;
+  // The elevator shaft (glass) through every floor, and its cab.
+  const a = pisos[0].plano.nucleo.ascensores[0];
+  const base = aMundo(0, a.x - 0.7, 0, a.y);
+  const alto = (pisos.length - 1) * PLANTA + 3.2;
+  pozo = new THREE.Mesh(new THREE.BoxGeometry(1.3, alto, 1.5), new THREE.MeshStandardMaterial({ color: '#BFD3E6', transparent: true, opacity: 0.16, roughness: 0.1, metalness: 0.2, depthWrite: false, fog: false }));
+  pozo.position.set(base.x, alto / 2, base.z);
+  mCabina = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.3, 1.3), new THREE.MeshStandardMaterial({ color: '#C9CDD2', roughness: 0.3, metalness: 0.8, fog: false }));
+  mCabina.position.set(base.x, 1.15, base.z);
+  escena.add(mPilas, mVuelos, mNotas, pozo, mCabina);
 }
-let mNotas = null;
 function actualizarBandejas(t) {
-  slugsBandeja.forEach((slug, k) => {
-    const b = mundo.bandejas.get(slug);
-    const s = datos.puestos[slug] || {};
-    const n = Math.max(0, (s.bandeja || 0) - (enCaminoA.get(slug) || 0));
-    const caida = caidas.has(slug) ? Math.max(0, 0.012 * Math.sin(Math.min(1, (t - caidas.get(slug)) / 0.35) * Math.PI)) : 0;
+  bandejas.forEach((b, k) => {
+    const s = P(b.slug) || {};
+    const n = Math.max(0, (s.bandeja || 0) - (enCaminoA.get(b.slug) || 0));
+    const caida = caidas.has(b.slug) ? Math.max(0, 0.012 * Math.sin(Math.min(1, (t - caidas.get(b.slug)) / 0.35) * Math.PI)) : 0;
     const alto = n ? Math.min(0.11, 0.008 + Math.min(n, 30) * 0.0034) : 0;
-    _q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.rot + ((hash(slug) % 7) - 3) * 0.02);
+    _q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.rot + ((hash(b.slug) % 7) - 3) * 0.02);
     _m.compose(_p.copy(b.pos).add(new THREE.Vector3(0, caida, 0)), _q, _s.set(1, Math.max(1e-4, alto), 1));
     mPilas.setMatrixAt(k, _m);
   });
@@ -718,137 +738,155 @@ function actualizarBandejas(t) {
   mVuelos.count = nv; mVuelos.instanceMatrix.needsUpdate = true;
   mNotas.count = nn; mNotas.instanceMatrix.needsUpdate = true;
   if (mNotas.instanceColor) mNotas.instanceColor.needsUpdate = true;
+  // the cab follows the first rider (others share the ride)
+  const viaje = cabinas.values().next().value;
+  if (viaje) mCabina.position.y = (viaje.desde + (viaje.hacia - viaje.desde) * viaje.u) * PLANTA + 1.15;
 }
 
 // ============================================================================================ los datos
-// Con el servidor (node server.mjs), los datos salen de /api/oficina. Publicada como sitio estático (GitHub Pages, Vercel,
-// cualquier carpeta servida), no hay /api: la página carga oficina.config.json y corre la simulación del modo demo ella misma.
-let estatica = null;
-async function configEstatica() {
-  for (const u of ['oficina.config.json', 'oficina.config.ejemplo.json']) {
-    try { const r = await fetch(u, { cache: 'no-store' }); if (r.ok) return await r.json(); } catch { /* el siguiente */ }
-  }
-  return null;
-}
-async function pedirOficina() {
-  if (!estatica) {
-    try {
-      const r = await fetch('/api/oficina', { cache: 'no-store' });
-      if (r.ok && (r.headers.get('content-type') || '').includes('json')) return await r.json();
-    } catch { /* sin servidor */ }
-    const config = await configEstatica();
-    if (!config) return null;
-    const { crearSimulacion } = await import('./simulacion.js');
-    estatica = { config, sim: crearSimulacion(config) };
-  }
-  return estatica.sim.foto();
-}
-
-let consulta = 0;
-async function cargar() {
-  clearTimeout(consulta);
-  try {
-    const j = await pedirOficina();
-    if (j) {
-      datos = j;
-      const f = JSON.stringify(j.zonas);
-      if (f !== firma) { firma = f; await construir(j); }
-      procesar(j.encargos || [], j.pedidos || []);
-      pintarRotulos();
-      pintarResumen();
-      for (const slug of Object.keys(plano.puestos)) {
-        const s = j.puestos[slug] || {};
-        if (s.persona) continue;
-        mundo.ponerPantalla(slug, s.estado === 'trabajando' ? (s.actividad === 'equipo' ? 'terminal' : s.actividad || 'pensando') : s.estado === 'espera' ? 'espera' : s.estado === 'libre' ? 'libre' : 'apagada');
-      }
-      oficinaEl.setAttribute('aria-busy', 'false');
-      if (!oficinaEl.classList.contains('lista')) requestAnimationFrame(() => requestAnimationFrame(() => oficinaEl.classList.add('lista')));
-    }
-  } catch (e) { if (!mundo) console.error(e); }
-  const quieta = performance.now() - ultimo > 5000;
-  if (!document.hidden) consulta = setTimeout(cargar, quieta ? 20000 : CONSULTA_MS);
-}
-
 let logoSvg = '', isotipoSvg = '';
-async function construir(j) {
-  // La primera vez: las fuentes de la marca y los logos, antes de pintar letreros.
+const letrerosPiso = new Map();
+function personaDe(slug) { const k = gente.get(slug)?.piso ?? pisoDe.get(slug); return k === undefined ? null : pisos[k]?.tropa.porSlug.get(slug); }
+
+function alSnapshot(snap) {
+  const edificio = aEdificio(snap);
+  datos = edificio;
+  // Rebuild the static building only when its layout (floors, rooms, desks) changes — never on heartbeats (§8.4).
+  const f = JSON.stringify(edificio.pisos.map((p) => [p.key, p.zonas.map((z) => [z.clave, z.puestos])]));
+  const listo = f === firma ? Promise.resolve() : (firma = f, construir(edificio, snap));
+  listo.then(() => {
+    pintarRotulos();
+    pintarResumen();
+    for (const [slug, s] of datos.sesiones) {
+      const k = pisoDe.get(slug);
+      if (k === undefined) continue;
+      pisos[k].mundo.ponerPantalla(slug, s.estado === 'trabajando' ? 'terminal' : s.estado === 'espera' ? 'espera' : s.estado === 'libre' ? 'libre' : 'apagada');
+    }
+    actividad?.actualizarAgentes([...datos.sesiones.values()]);
+    oficinaEl.setAttribute('aria-busy', 'false');
+    if (!oficinaEl.classList.contains('lista')) requestAnimationFrame(() => requestAnimationFrame(() => oficinaEl.classList.add('lista')));
+  }).catch((e) => console.error(e));
+}
+
+let construyendo = Promise.resolve();
+function construir(edificio, snap) {
+  construyendo = construyendo.then(() => construirYa(edificio, snap));
+  return construyendo;
+}
+let construcciones = 0;
+async function construirYa(edificio, snap) {
+  construcciones++;
   if (!logoSvg) {
     await Promise.all([document.fonts.load('600 64px Archivo'), document.fonts.load('500 32px "Space Grotesk"')]).catch(() => {});
-    // La marca: el título, los colores y los dos logos, de oficina.config.json.
-    const marca = estatica ? (estatica.config.marca || {}) : await fetch('/api/marca', { cache: 'no-store' }).then((r) => r.json()).catch(() => ({}));
-    if (marca.colores) TX.ponerMarca(marca.colores);
-    if (marca.titulo) { document.title = marca.titulo; $('.cabeza h1').textContent = marca.titulo; }
-    if (marca.nombre) oficinaEl.setAttribute('aria-label', `La oficina de ${marca.nombre}`);
-    [logoSvg, isotipoSvg] = await Promise.all([marca.logo || 'marca/logo.svg', marca.isotipo || 'marca/isotipo.svg'].map((u) => fetch(u).then((r) => r.text())));
+    TX.ponerMarca({ vino: '#3B2A4A', rojo: '#D9503F', naranja: '#E07A3F', amarillo: '#F2C46B', negro: '#0B0B0B', gris: '#E3E3E3' });
+    const titulo = snap.building.title || 'Agent Office';
+    document.title = titulo; $('.cabeza h1').textContent = titulo;
+    [logoSvg, isotipoSvg] = await Promise.all(['/office/marca/logo.svg', '/office/marca/isotipo.svg'].map((u) => fetch(u).then((r) => r.text())));
   }
-  if (mundo) { escena.remove(mundo.grupo); /* la ciudad se queda: es la misma */ }
+  for (const P2 of pisos) escena.remove(P2.mundo.grupo);
   for (const o of [...escena.children]) if (o !== hemi && o !== sol && o !== sol.target) escena.remove(o);
-  plano = distribuir(j.zonas, j.puestos);
-  mundo = await crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg, datos: j });
-  const quienes = Object.keys(plano.puestos).map((slug) => {
-    const s = j.puestos[slug] || {};
-    if (slug === 'dueno') return { slug, camisa: s.camisa || '#16171A', persona: true, piel: '#E7BF9C', pelo: '#2A1D16', largo: s.genero === 'f', pantalon: '#2B2D31' };
-    return { slug, camisa: s.camisa || s.paleta?.[0] || '#8E8E93', largo: s.genero === 'f' };
+  // Floors bottom-up: the config lists the top floor first.
+  const orden = [...edificio.pisos].reverse();
+  pisoDe.clear();
+  const minimo = Math.max(...orden.map((p) => distribuir(p.zonas, p.puestos).interior));
+  pisos = [];
+  for (let k = 0; k < orden.length; k++) {
+    const def = orden[k];
+    const plano = distribuir(def.zonas, def.puestos, minimo);
+    const mundo = await crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg, datos: { zonas: def.zonas, puestos: def.puestos }, y: k * PLANTA, conCiudad: k === 0 });
+    const quienes = Object.keys(plano.puestos).map((slug) => ({ slug, camisa: def.puestos[slug]?.paleta?.[0] || '#8E8E93', largo: def.puestos[slug]?.genero === 'f' }));
+    const tropa = crearPersonas(mundo.grupo, quienes, TX.sombraSuave(), TX.halo());
+    // A stacked floor would cast its slab's shadow over the whole floor below (one sun for the building): only the
+    // ground floor casts shadows, so every floor stays readable from the side.
+    if (k > 0) mundo.grupo.traverse((o) => { o.castShadow = false; });
+    for (const slug of Object.keys(plano.puestos)) pisoDe.set(slug, k);
+    pisos.push({ key: def.key, nombre: def.nombre, y: k * PLANTA, plano, mundo, tropa });
+  }
+  // floor labels (DOM) and floor buttons
+  for (const el of letrerosPiso.values()) el.remove();
+  letrerosPiso.clear();
+  pisos.forEach((P2, k) => {
+    const el = document.createElement('div');
+    el.className = 'letrero-piso';
+    el.textContent = `P${k + 1} · ${P2.nombre}`;
+    capaRotulos.append(el);
+    letrerosPiso.set(k, el);
   });
-  tropa = crearPersonas(mundo.grupo, quienes, TX.sombraSuave(), TX.halo());
+  pintarPlantas();
   crearBandejasYVuelos();
-  // Las sombras se pintan una vez, sobre la oficina: el sol mira a su centro y su caja la cubre entera.
   sol.target.position.set(0, 0, 0);
-  const lado = Math.max(plano.WT, D) / 2 + 8;
-  Object.assign(sol.shadow.camera, { left: -lado, right: lado, top: lado, bottom: -lado, near: 10, far: 170 });
+  const lado = Math.max(pisos[0].plano.WT, D) / 2 + 8 + pisos.length * 2;
+  Object.assign(sol.shadow.camera, { left: -lado, right: lado, top: lado, bottom: -lado, near: 10, far: 220 });
   sol.shadow.camera.updateProjectionMatrix();
   if (!post.nivel) post.armar(calidadPedida || 'alta');
   ponerTema(tema, false);
   ubicarDeUna();
-  gente.forEach((g) => { if (!plano.puestos[g.slug]) gente.delete(g.slug); });
+  gente.forEach((g) => { if (!pisoDe.has(g.slug)) gente.delete(g.slug); });
   casa = null;
   construidoEn = performance.now();
   encuadrar();
-  const pedida = params.get('zona');
-  const z = ['comedor', 'social', 'sala'].includes(pedida) ? plano.social : pedida === 'terraza' ? plano.terraza : plano.salas.find((s) => s.clave === pedida);
-  if (z) { const v = vistaDeZona(z); controles.target.copy(v.objetivo); ponerEn(camara, v.objetivo, v.az, v.polar, v.d); controles.update(); }
-  const p = params.get('puesto');
-  if (p && plano.puestos[p]) { const v = vistaDePuesto(p); controles.target.copy(v.objetivo); ponerEn(camara, v.objetivo, v.az, v.polar, v.d); controles.update(); }
+  const pedido = params.get('planta');
+  const kp = pisos.findIndex((p) => p.key === pedido);
+  if (kp >= 0) { const v = vistaDePiso(kp); controles.target.copy(v.objetivo); ponerEn(camara, v.objetivo, v.az, v.polar, v.d); controles.update(); }
+}
+
+function pintarPlantas() {
+  const nav = $('.plantas');
+  nav.replaceChildren();
+  for (let k = pisos.length - 1; k >= 0; k--) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = `P${k + 1} ${pisos[k].nombre}`;
+    b.addEventListener('click', () => volarA(vistaDePiso(k)));
+    nav.append(b);
+  }
 }
 
 // ============================================================================================ el cuadro
 let cuadro = 0, ultimo = 0, cuadrosSeg = 0, segundoEn = 0, lentos = 0, construidoEn = 0;
 const medida = { ms: 0, fps: 0, llamadas: 0, triangulos: 0 };
 window.oficinaMedida = medida;
-// Para medir y revisar desde la consola; la página no lo usa.
-window.oficina3d = { escena, camara, controles, renderer, gente, post, get mundo() { return mundo; }, get plano() { return plano; } };
+// Inspection hook (tests/visual checks read it; the page itself does not).
+window.oficina3d = {
+  escena, camara, controles, renderer, gente, post, get pisos() { return pisos; }, get datos() { return datos; },
+  resumen() {
+    return {
+      construcciones, pisos: pisos.map((p) => ({ key: p.key, nombre: p.nombre, y: p.y, personas: p.tropa.lista.length, salas: p.plano.salas.filter((s) => s.tipo === 'depto').map((s) => s.nombre) })),
+      sesiones: [...(datos?.sesiones || new Map())].map(([id, s]) => ({ id, agente: s.nombre, owner: s.owner, runtime: s.runtime, piso: pisoDe.has(id) ? pisos[pisoDe.get(id)].key : null, estado: s.estado, visible: !!gente.get(id)?.visible, sub: s.sub, coordinador: s.coordinador })),
+      rotulos: rotulos.size, enAscensor: [...gente.values()].filter((g) => g.modo === 'ascensor').length, caminando: [...gente.values()].filter((g) => g.modo === 'caminando').length,
+      fps: medida.real, calidad: medida.calidad,
+    };
+  },
+  irAPiso(k) { volarA(vistaDePiso(k), 1); }, irACasa() { if (casa) volarA(casa, 1); }, irAPuesto(slug) { volarA(vistaDePuesto(slug), 1); },
+};
 function bucle(ahora) {
   cuadro = requestAnimationFrame(bucle);
   avanzarVuelo(ahora);
   const moviendo = !!vuelo || ahora - movidaEn < 300;
   const fps = moviendo ? 60 : reducido.matches ? 15 : 30;
   if (ahora - ultimo < 1000 / fps - 1.5) return;
-  if (ultimo && ahora - ultimo > 5000) setTimeout(cargar, 0);
   const dt = ultimo ? Math.min(0.1, (ahora - ultimo) / 1000) : 0;
   ultimo = ahora;
-  if (!mundo || !datos) return;
+  if (!pisos.length || !datos) return;
   const t0 = performance.now();
   reloj += dt;
   if (!vuelo) controles.update(dt);
-  // Que la cámara no se pierda: el objetivo se queda cerca de la torre.
   const tg = controles.target;
-  const lim = 240;
-  if (Math.abs(tg.x) > lim || Math.abs(tg.z) > lim || tg.y < -ALTURA || tg.y > 12) {
-    tg.set(clamp(tg.x, -lim, lim), clamp(tg.y, -ALTURA, 12), clamp(tg.z, -lim, lim));
-  }
+  const lim = 240, techo = pisos.length * PLANTA + 12;
+  if (Math.abs(tg.x) > lim || Math.abs(tg.z) > lim || tg.y < -78 || tg.y > techo) tg.set(clamp(tg.x, -lim, lim), clamp(tg.y, -78, techo), clamp(tg.z, -lim, lim));
+  for (const g of gente.values()) if (g.modo === 'ascensor') enAscensor(g, reloj);
   simular(reloj, dt);
-  const poses = new Map();
+  const poses = pisos.map(() => new Map());
   for (const g of gente.values()) {
     if (!g.visible) continue;
     const pulso = pulsos.has(g.slug) ? Math.max(0, 1 - (reloj - pulsos.get(g.slug)) / 1.1) : 0;
-    const s = datos.puestos[g.slug] || {};
-    const brillo = s.persona ? 0 : s.estado === 'trabajando' ? 1 : s.estado === 'espera' ? 0.75 + Math.sin(reloj * 2.4) * 0.25 : 0.35;
-    poses.set(g.slug, { visible: true, x: g.x, y: g.y, rumbo: g.rumbo, ...g.pose, s: g.s, esfera: brillo + pulso, pulso, esferaSube: s.estado === 'espera' ? 0.12 : 0 });
+    const s = P(g.slug) || {};
+    const brillo = s.estado === 'trabajando' ? 1 : s.estado === 'espera' ? 0.75 + Math.sin(reloj * 2.4) * 0.25 : 0.35;
+    poses[g.piso]?.set(g.slug, { visible: true, x: g.x, y: g.y, rumbo: g.rumbo, ...g.pose, s: g.s, esfera: brillo + pulso, pulso, esferaSube: s.estado === 'espera' ? 0.12 : 0 });
   }
   const t1 = performance.now();
-  tropa.actualizar(reloj, poses);
+  pisos.forEach((P2, k) => { P2.tropa.actualizar(reloj, poses[k]); P2.mundo.actualizar(reloj, reducido.matches ? 0 : dt, camara); });
   actualizarBandejas(reloj);
-  mundo.actualizar(reloj, reducido.matches ? 0 : dt, camara);
   const t2 = performance.now();
   post.enfocar(camara.position.distanceTo(controles.target));
   post.dibujar(dt);
@@ -860,23 +898,18 @@ function bucle(ahora) {
   medida.dibujar = (medida.dibujar || 0) * 0.95 + (t3 - t2) * 0.05;
   medida.rotulos = (medida.rotulos || 0) * 0.95 + (performance.now() - t3) * 0.05;
   medida.ms = medida.ms * 0.95 + (performance.now() - t0) * 0.05;
-  // Los cuadros que de verdad salen por segundo (si la tarjeta gráfica no alcanza, aquí se nota).
   cuadrosSeg++;
   if (ahora - segundoEn >= 1000) {
     medida.real = Math.round(cuadrosSeg * 1000 / (ahora - segundoEn));
     cuadrosSeg = 0; segundoEn = ahora;
-    // Si la tarjeta gráfica no da los cuadros que se piden, se baja la resolución un escalón (nunca por debajo de 1, ni si la
-    // pidió la dirección con ?dpr). Tres segundos seguidos cortos, para no bajar por un tirón.
     const pedidos = moviendo ? 50 : fps;
-    // Los primeros segundos no cuentan: ahí se compilan los sombreadores y se suben las texturas, y cualquier tarjeta va lenta.
     const calentando = performance.now() - construidoEn < 8000;
     lentos = !calentando && medida.real < pedidos * 0.72 && !document.hidden ? lentos + 1 : 0;
-    // Primero se sueltan los efectos (la oclusión, después el brillo y el desenfoque) y solo después la resolución.
     if (lentos >= 3 && !calidadPedida && post.nivel !== 'baja') {
       post.armar(post.nivel === 'alta' ? 'media' : 'baja');
       post.ponerNoche(tema === 'noche');
       lentos = 0;
-      construidoEn = performance.now();   // el cambio también compila: se vuelve a calentar antes de juzgar
+      construidoEn = performance.now();
     } else if (lentos >= 3 && !params.get('dpr') && renderer.getPixelRatio() > 1.01) {
       renderer.setPixelRatio(Math.max(1, renderer.getPixelRatio() * 0.82));
       renderer.setSize(innerWidth, innerHeight, false);
@@ -891,38 +924,20 @@ function bucle(ahora) {
   medida.llamadas = renderer.info.render.calls;
   medida.triangulos = renderer.info.render.triangles;
 }
-function arrancar() {
-  cancelAnimationFrame(cuadro);
-  ultimo = 0;
-  cuadro = requestAnimationFrame(bucle);
-  cargar();
-}
-function parar() {
-  cancelAnimationFrame(cuadro);
-  clearTimeout(consulta);
-}
+// Hidden tab: rendering stops; data keeps flowing (and a fresh snapshot is loaded on return, see datos.js).
+function arrancar() { cancelAnimationFrame(cuadro); ultimo = 0; cuadro = requestAnimationFrame(bucle); }
+function parar() { cancelAnimationFrame(cuadro); }
 document.addEventListener('visibilitychange', () => (document.hidden ? parar() : arrancar()));
 
 // ============================================================================================ tocar, pasar el cursor y las teclas
-// Arrastrar gira la maqueta (con el botón derecho, o con Shift, se corre); la rueda acerca donde está el cursor. Un toque en
-// una sala la enmarca; ya cerca, un toque en una persona la enmarca a ella; fuera de la oficina, vuelve a la vista entera.
 const rayo = new THREE.Raycaster();
-const pisoPlano = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-function alPiso(cx, cy) {
-  const ndc = new THREE.Vector2((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
-  rayo.setFromCamera(ndc, camara);
-  const p = new THREE.Vector3();
-  if (!rayo.ray.intersectPlane(pisoPlano, p)) return null;
-  return { x: p.x + mundo.CX, y: p.z + mundo.CY };
-}
 function personaBajo(cx, cy) {
   let mejor = null, d = 46;
   for (const [slug, g] of gente) {
     if (!g.visible) continue;
-    const per = tropa.porSlug.get(slug);
-    if (!per?.cabezaEn) continue;
-    for (const h of [0, -0.55]) {
-      _v.set(per.cabezaEn.x - mundo.CX, per.cabezaEn.y + h, per.cabezaEn.z - mundo.CY).project(camara);
+    const c = cabezaMundo(slug);
+    for (const h of [-0.12, -0.67]) {
+      _v.set(c.x, c.y + h, c.z).project(camara);
       const sx = (_v.x + 1) / 2 * innerWidth, sy = (1 - _v.y) / 2 * innerHeight;
       const dd = Math.hypot(sx - cx, sy - cy);
       if (dd < d) { d = dd; mejor = slug; }
@@ -930,21 +945,25 @@ function personaBajo(cx, cy) {
   }
   return mejor;
 }
+/** Floor under the cursor: the first floor slab the ray crosses, top-down. */
+function pisoBajo(cx, cy) {
+  const ndc = new THREE.Vector2((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
+  rayo.setFromCamera(ndc, camara);
+  for (let k = pisos.length - 1; k >= 0; k--) {
+    const { WT } = pisos[k].plano;
+    const caja = new THREE.Box3(new THREE.Vector3(-WT / 2, pisos[k].y - 0.4, -D / 2), new THREE.Vector3(WT / 2, pisos[k].y + 3.3, D / 2));
+    if (rayo.ray.intersectsBox(caja)) return k;
+  }
+  return -1;
+}
 function queHariaUnToque(cx, cy) {
-  if (!plano) return null;
+  if (!pisos.length) return null;
   const v = vistaActual();
   const slug = personaBajo(cx, cy);
-  const piso = alPiso(cx, cy);
-  const zona = piso && plano.salas.find((z) => piso.x >= z.x0 && piso.x <= z.x1 && piso.y >= z.y0 && piso.y <= z.y1);
-  if (slug) {
-    const vp = vistaDePuesto(slug);
-    const vz = zona && vistaDeZona(zona);
-    if (vz && v.d > vz.d * 1.15) return vz;
-    if (v.d > vp.d * 1.12) return vp;
-  }
-  if (zona) { const vz = vistaDeZona(zona); if (v.d > vz.d * 1.12) return vz; return null; }
-  const dentro = piso && piso.x >= -1 && piso.x <= plano.WT + 1 && piso.y >= -1 && piso.y <= D + 1;
-  if (!dentro && !estaEnCasa()) return casa;
+  if (slug) { const vp = vistaDePuesto(slug); if (v.d > vp.d * 1.12) return vp; }
+  const k = pisoBajo(cx, cy);
+  if (k >= 0) { const vf = vistaDePiso(k); if (v.d > vf.d * 1.12) return vf; return null; }
+  if (!estaEnCasa()) return casa;
   return null;
 }
 let abajo = null;
@@ -954,6 +973,8 @@ lienzo.addEventListener('pointerup', (ev) => {
   const quieto = Math.hypot(ev.clientX - abajo.x, ev.clientY - abajo.y) < 6 && performance.now() - abajo.t < 900 && abajo.b === 0;
   abajo = null;
   if (!quieto) return;
+  const slug = personaBajo(ev.clientX, ev.clientY);
+  if (slug) actividad?.filtrarAgente(P(slug)?.nombre);
   const meta = queHariaUnToque(ev.clientX, ev.clientY);
   if (meta) volarA(meta);
 });
@@ -962,7 +983,7 @@ lienzo.addEventListener('pointermove', (ev) => {
   if (ev.buttons) { oficinaEl.classList.add('arrastrando'); return; }
   oficinaEl.classList.remove('arrastrando');
   const ahora = performance.now();
-  if (ahora - ultimoSobre < 60 || !plano) return;
+  if (ahora - ultimoSobre < 60 || !pisos.length) return;
   ultimoSobre = ahora;
   const slug = personaBajo(ev.clientX, ev.clientY);
   if (slug !== encima) {
@@ -980,11 +1001,13 @@ function dolly(f) {
   volarA({ ...v, d: clamp(v.d * f, controles.minDistance, controles.maxDistance) }, 420);
 }
 window.addEventListener('keydown', (ev) => {
+  if (ev.target.closest?.('input, select, textarea')) return;
   if (ev.target.closest?.('button') && ev.key === 'Escape') ev.target.blur();
   const v = vistaActual();
   if (ev.key === '+' || ev.key === '=') dolly(1 / 1.4);
   else if (ev.key === '-' || ev.key === '_') dolly(1.4);
   else if (ev.key === 'Escape' || ev.key === '0') { if (casa) volarA(casa); }
+  else if (/^[1-9]$/.test(ev.key) && pisos[Number(ev.key) - 1]) volarA(vistaDePiso(Number(ev.key) - 1));
   else if (ev.key === 'ArrowLeft') volarA({ ...v, az: v.az - 0.26 }, 380);
   else if (ev.key === 'ArrowRight') volarA({ ...v, az: v.az + 0.26 }, 380);
   else if (ev.key === 'ArrowUp') volarA({ ...v, polar: clamp(v.polar - 0.12, controles.minPolarAngle, controles.maxPolarAngle) }, 380);
@@ -1011,8 +1034,31 @@ function pintarZoom() {
   zoomEl.querySelector('[data-zoom="menos"]').disabled = lejos;
 }
 
+// ============================================================================================ arranque
 document.documentElement.dataset.tema = tema;
 for (const b of document.querySelectorAll('.tema button')) b.setAttribute('aria-checked', String(b.dataset.tema === tema));
 oficinaEl.setAttribute('aria-busy', 'true');
+
+function login(mensaje) {
+  const f = $('#acceso');
+  f.hidden = false;
+  if (mensaje) $('#acceso-error').textContent = mensaje;
+  f.onsubmit = (ev) => { ev.preventDefault(); token.set($('#acceso-token').value.trim()); f.hidden = true; iniciar(); };
+}
+let conexion = null;
+function iniciar() {
+  if (!token.get()) { login(); return; }
+  actividad = actividad || crearActividad({
+    raiz: $('.actividad'),
+    alAgente: (agente) => { const slug = sesionDeAgente(datos?.sesiones || new Map(), agente); if (slug && PU(slug)) volarA(vistaDePuesto(slug)); },
+  });
+  conexion = conectar({
+    onSnapshot: alSnapshot,
+    onEvents: (evs, { replay }) => { actividad.agregar(evs, (e) => clasificar(e)); if (!replay) for (const e of evs) alEvento(e); },
+    onEstado: (texto, clase) => actividad.estado(texto, clase),
+    onAuth: () => { conexion?.cerrar(); token.clear(); login('Token inválido o revocado'); },
+  });
+}
 encuadrar();
 arrancar();
+iniciar();

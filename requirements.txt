@@ -11,3 +11,4 @@ scramp==1.5.0
 asn1crypto==1.5.1
 python-dateutil==4.0.0
 tzdata==2026.6
+websockets==15.0.1  # uvicorn's WebSocket protocol for /ws/events (pure-Python fallback, works on ARM)

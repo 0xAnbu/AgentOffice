@@ -298,3 +298,81 @@ body {
   body, .escena, .oficina { transition: none; }
   .oficina { transform: none; }
 }
+
+/* ============================================================== Agent Office additions */
+/* Labels: runtime / coordinator / sub-agent badges; the shape of the original label is kept. */
+.rotulo { pointer-events: auto; cursor: pointer; }
+.rotulo .insignias { display: inline-flex; gap: calc(var(--u) * .06); margin-right: calc(var(--u) * .08); vertical-align: middle; }
+.insignia { text-shadow: none; -webkit-text-stroke: 0; font: 600 calc(var(--u) * .15)/1 "Space Grotesk", system-ui, sans-serif; padding: calc(var(--u) * .04) calc(var(--u) * .07);
+  border-radius: calc(var(--u) * .08); background: var(--c); color: #fff; letter-spacing: .02em; }
+.insignia.coord { background: #C2410C; }
+.insignia.cand { background: transparent; color: #C2410C; border: 1px solid #C2410C; }
+.insignia.sub { background: transparent; color: var(--texto2); border: 1px solid var(--filete); }
+.insignia.aviso { background: #E5484D; }
+.rotulo.subagente .quien { font-size: .9em; }
+.rotulo.coordinador .quien { text-decoration: underline 2px #C2410C; text-underline-offset: 3px; }
+.rotulo.marca-exito::after, .rotulo.marca-coordinador::after { content: "✓"; position: absolute; left: 50%; top: calc(var(--u) * -.45);
+  transform: translateX(-50%); font: 700 calc(var(--u) * .3)/1 system-ui; color: #30B46C; animation: cambia .7s var(--resorte) both; }
+.rotulo.marca-coordinador::after { content: "★ nuevo coordinador"; color: #C2410C; font-size: calc(var(--u) * .2); white-space: nowrap; }
+.letrero-piso { position: absolute; left: 0; top: 0; transform: translate(-100%, -50%); font: 650 13px/1.2 "Archivo", system-ui;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--texto2); background: var(--halo); padding: 4px 8px; border-radius: 8px;
+  white-space: nowrap; pointer-events: none; }
+.letrero-piso.oculto { visibility: hidden; }
+
+/* Floors navigation */
+.plantas { position: fixed; left: clamp(12px, 1.6vw, 40px); top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+.plantas button { font: 500 12px/1.2 "Space Grotesk", system-ui; text-align: left; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--filete);
+  background: var(--halo); color: var(--texto); cursor: pointer; backdrop-filter: blur(10px); }
+.plantas button:hover { border-color: var(--texto2); }
+
+/* Activity Center: floating, translucent, never half the screen; the building stays the protagonist. */
+.actividad { position: fixed; right: clamp(10px, 1.2vw, 28px); top: clamp(80px, 11vh, 140px); bottom: clamp(10px, 2vh, 28px);
+  width: clamp(320px, 28vw, 460px); display: flex; flex-direction: column; z-index: 6; border-radius: 18px;
+  background: color-mix(in srgb, var(--fondo) 62%, transparent); backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2); border: 1px solid var(--filete); box-shadow: 0 12px 40px rgba(0, 0, 0, .12);
+  font: 13px/1.35 "Space Grotesk", system-ui, sans-serif; color: var(--texto); overflow: hidden; transition: width .25s var(--suave); }
+.actividad.expandida { width: clamp(420px, 46vw, 820px); }
+.actividad.plegada { bottom: auto; }
+.actividad.plegada .filtros, .actividad.plegada .tarjetas { display: none; }
+.actividad header { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; }
+.actividad h2 { font: 650 14px/1 "Archivo", system-ui; margin: 0; letter-spacing: .02em; flex: 1; }
+.actividad header button, .boton-chat { font: inherit; border: 1px solid var(--filete); background: var(--segmento); color: var(--texto);
+  border-radius: 9px; padding: 4px 9px; cursor: pointer; text-decoration: none; }
+.boton-chat { font-weight: 600; background: var(--texto); color: var(--fondo); }
+.conexion { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: var(--pista); }
+.conexion.vivo { background: #30B46C22; color: #1F8A52; }
+.conexion.reconectando { background: #D9A40022; color: #8A6A00; }
+.conexion.caido { background: #E5484D22; color: #B42318; }
+.filtros { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; align-items: center; }
+.filtros select, .filtros input[name=tarea] { font: inherit; font-size: 12px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--filete);
+  background: var(--segmento); color: var(--texto); max-width: 46%; }
+.filtros input[name=tarea] { width: 70px; }
+.filtros .cuenta { margin-left: auto; color: var(--texto2); font-size: 11px; }
+.tarjetas { list-style: none; margin: 0; padding: 0 10px 12px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.tarjeta { background: var(--segmento); border: 1px solid var(--filete); border-left: 4px solid var(--cc); border-radius: 12px; padding: 9px 11px; }
+.tarjeta.urgente { box-shadow: 0 0 0 2px #E5484D55; }
+.tarjeta .cab { display: flex; align-items: center; gap: 8px; }
+.tarjeta .icono { width: 20px; height: 20px; border-radius: 6px; background: var(--cc); color: #fff; display: grid; place-items: center; font: 700 11px/1 system-ui; }
+.tarjeta .titulo { font-weight: 650; flex: 1; text-transform: uppercase; font-size: 11.5px; letter-spacing: .04em; color: var(--cc); }
+.tarjeta time { color: var(--texto2); font-size: 11px; }
+.tarjeta .ruta { color: var(--texto2); font-size: 12px; margin-top: 3px; }
+.tarjeta .resumen-ev { margin-top: 4px; overflow-wrap: anywhere; }
+.tarjeta .resumen-ev:empty { display: none; }
+.tarjeta .pie { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--texto2); flex-wrap: wrap; }
+.tarjeta .pie span { flex: 1; }
+.tarjeta .pie a, .tarjeta .pie button { font: inherit; color: var(--texto); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+
+/* Login */
+.acceso { position: fixed; inset: 0; margin: auto; width: min(380px, 90vw); height: fit-content; z-index: 20; padding: 22px; border-radius: 18px;
+  background: var(--halo); backdrop-filter: blur(20px); border: 1px solid var(--filete); box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+  font: 14px/1.4 "Space Grotesk", system-ui; color: var(--texto); }
+.acceso h2 { font: 700 20px/1 "Archivo", system-ui; margin: 0 0 8px; }
+.acceso input { width: 100%; box-sizing: border-box; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--filete); margin: 8px 0; }
+.acceso button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 10px; border: 0; background: var(--texto); color: var(--fondo); cursor: pointer; }
+.acceso .error { color: #B42318; min-height: 1em; }
+.cabeza { right: calc(clamp(320px, 28vw, 460px) + 40px); }
+@media (max-width: 760px) {
+  .actividad { left: 8px; right: 8px; width: auto; top: auto; height: 42vh; }
+  .actividad.expandida { width: auto; height: 80vh; }
+  .plantas { top: auto; bottom: calc(42vh + 18px); transform: none; flex-direction: row; flex-wrap: wrap; }
+}

@@ -44,7 +44,10 @@ EVIDENCE: dict[str, Any] = {"started": datetime.now(UTC).isoformat(), "steps": [
 
 def step(name: str, ok: bool, **detail: Any) -> bool:
     EVIDENCE["steps"].append({"step": name, "ok": ok, "at": datetime.now(UTC).isoformat(), **detail})
-    print(("PASS " if ok else "FAIL ") + name + (f"  {json.dumps(detail, ensure_ascii=False)[:300]}" if detail else ""), flush=True)
+    print(
+        ("PASS " if ok else "FAIL ") + name + (f"  {json.dumps(detail, ensure_ascii=False)[:300]}" if detail else ""),
+        flush=True,
+    )
     return ok
 
 
@@ -78,13 +81,15 @@ class Env:
         self.bin = self.dir / "bin"
         self.bin.mkdir()
         wrapper = self.bin / "agentlink"
-        wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} -m agentlink.cli \"$@\"\n")
+        wrapper.write_text(f'#!/bin/sh\nexec {sys.executable} -m agentlink.cli "$@"\n')
         wrapper.chmod(0o755)
         self.adm.call("POST", "/api/projects", {"name": "e2e", "description": "real runtime e2e"})
         self.tokens: dict[str, str] = {}
 
     def agent(self, name: str, spec: str, owner: str) -> str:
-        r = self.adm.call("POST", "/api/admin/agents", {"name": name, "owner": owner, "specialization": spec, "projects": ["e2e"]})
+        r = self.adm.call(
+            "POST", "/api/admin/agents", {"name": name, "owner": owner, "specialization": spec, "projects": ["e2e"]}
+        )
         self.tokens[name] = r["token"]
         return r["token"]
 
@@ -101,7 +106,12 @@ class Env:
                "agent": name, "channel": "e2e-dev"}  # fmt: skip
         (home / "config.json").write_text(json.dumps(cfg))
         os.chmod(home / "config.json", 0o600)
-        env = {**os.environ, "AGENTLINK_HOME": str(home), "PATH": f"{self.bin}:{os.environ['PATH']}", "PYTHONPATH": str(ROOT)}
+        env = {
+            **os.environ,
+            "AGENTLINK_HOME": str(home),
+            "PATH": f"{self.bin}:{os.environ['PATH']}",
+            "PYTHONPATH": str(ROOT),
+        }
         store = Store(home / "state.db")
         api = Api(self.url, self.tokens[name])
         return {"name": name, "home": home, "ws": ws, "env": env, "store": store, "api": api,
@@ -122,7 +132,17 @@ class Env:
 
 
 def run_claude(p: dict[str, Any], prompt: str, resume: str | None = None, turns: int = 8) -> dict[str, Any]:
-    cmd = ["claude", "-p", prompt, "--output-format", "json", "--max-turns", str(turns), "--allowedTools", "Bash(agentlink:*)"]
+    cmd = [
+        "claude",
+        "-p",
+        prompt,
+        "--output-format",
+        "json",
+        "--max-turns",
+        str(turns),
+        "--allowedTools",
+        "Bash(agentlink:*)",
+    ]
     if resume:
         cmd += ["--resume", resume]
     t0 = time.time()
@@ -147,15 +167,30 @@ def scenario_claude(env: Env, sender: Api) -> bool:
     new = p["sup"].once(wait=0)["new"]
     step("claude: supervisor received and stored it", m["id"] in new)
     step("claude: server shows delivered_to_supervisor", env.delivery(m["id"])[0]["state"] == "delivered_to_supervisor")
-    run = run_claude(p, "You are working in this repository. Handle any Agent Office messages addressed to you exactly as they ask, then stop.")
+    run = run_claude(
+        p,
+        "You are working in this repository. Handle any Agent Office messages addressed to you exactly as they ask, then stop.",
+    )
     EVIDENCE["results"]["claude_run"] = run
     sess = [s for s in p["store"].q("SELECT * FROM sessions")]
-    step("claude: SessionStart hook registered a server session", bool(sess and sess[0]["server_id"]), local_session=run.get("session_id"))
+    step(
+        "claude: SessionStart hook registered a server session",
+        bool(sess and sess[0]["server_id"]),
+        local_session=run.get("session_id"),
+    )
     replies = [x for x in env.messages() if x.get("reply_to") == m["id"] and x["author"] == "rc-claude"]
-    step("claude: agent performed observable action (reply authored by rc-claude)", bool(replies), reply=replies[0]["body"][:200] if replies else None)
+    step(
+        "claude: agent performed observable action (reply authored by rc-claude)",
+        bool(replies),
+        reply=replies[0]["body"][:200] if replies else None,
+    )
     step("claude: reply contains the requested code", bool(replies) and word in replies[0]["body"])
     st = env.delivery(m["id"])[0]
-    step("claude: delivery state processed with evidence", st["state"] == "processed" and bool(st.get("evidence")), delivery=st)
+    step(
+        "claude: delivery state processed with evidence",
+        st["state"] == "processed" and bool(st.get("evidence")),
+        delivery=st,
+    )
     ADAPTERS["claude-code"].uninstall("project", str(p["ws"]))
     return bool(replies) and st["state"] == "processed"
 
@@ -165,12 +200,23 @@ def scenario_headless(env: Env, sender: Api, runtime: str, name: str) -> bool:
     if runtime == "opencode" and os.environ.get("AGENTLINK_OPENCODE_MODEL"):
         p["store"].put("adapter.opencode", {"model": os.environ["AGENTLINK_OPENCODE_MODEL"]})
     word = ("CEDAR-" if runtime == "codex" else "MAPLE-") + secrets.token_hex(2).upper()
-    m = sender.call("POST", "/api/channels/e2e-dev/messages", {"body": f"@{name} What is 6 times 7? Include the code {word} in your answer."})
+    m = sender.call(
+        "POST",
+        "/api/channels/e2e-dev/messages",
+        {"body": f"@{name} What is 6 times 7? Include the code {word} in your answer."},
+    )
     p["sup"].once(wait=0)
-    step(f"{runtime}: supervisor received and stored it", env.delivery(m["id"])[0]["state"] == "delivered_to_supervisor")
+    step(
+        f"{runtime}: supervisor received and stored it", env.delivery(m["id"])[0]["state"] == "delivered_to_supervisor"
+    )
     res = p["sup"].exec_deliver(runtime, str(p["ws"]), timeout=240)
     EVIDENCE["results"][f"{runtime}_exec"] = res
-    step(f"{runtime}: runtime turn executed", res.get("exit_code") == 0, seconds=res.get("seconds"), answer=res.get("answer", "")[:200])
+    step(
+        f"{runtime}: runtime turn executed",
+        res.get("exit_code") == 0,
+        seconds=res.get("seconds"),
+        answer=res.get("answer", "")[:200],
+    )
     replies = [x for x in env.messages() if x.get("reply_to") == m["id"] and x["author"] == name]
     ok = bool(replies) and word in replies[0]["body"] and "42" in replies[0]["body"]
     step(f"{runtime}: answer relayed as reply authored by {name} (contains 42 and code)", ok)
@@ -184,8 +230,12 @@ def scenario_cross(env: Env) -> bool:
     x = env.participant("x-codex", "codex")
     ADAPTERS["claude-code"].install("project", str(c["ws"]))
     c["sup"].once(wait=0)
-    first = run_claude(c, "Use the shell command `agentlink post e2e-dev \"@x-codex <question>\" --kind question` to ask the agent "
-                          "x-codex: 'Which HTTP status code means Not Found? Answer with the number.' Then stop.", turns=6)
+    first = run_claude(
+        c,
+        'Use the shell command `agentlink post e2e-dev "@x-codex <question>" --kind question` to ask the agent '
+        "x-codex: 'Which HTTP status code means Not Found? Answer with the number.' Then stop.",
+        turns=6,
+    )
     EVIDENCE["results"]["cross_claude_send"] = first
     asks = [m for m in env.messages() if m["author"] == "x-claude" and "x-codex" in (m.get("mentions") or [])]
     if not step("cross: Claude Code itself posted the request", bool(asks), session=first.get("session_id")):
@@ -196,16 +246,28 @@ def scenario_cross(env: Env) -> bool:
     res = x["sup"].exec_deliver("codex", str(x["ws"]))
     EVIDENCE["results"]["cross_codex"] = res
     ans = [m for m in env.messages() if m.get("reply_to") == q["id"] and m["author"] == "x-codex"]
-    if not step("cross: Codex answered (relayed reply)", bool(ans) and "404" in ans[0]["body"], answer=ans[0]["body"][:200] if ans else None):
+    if not step(
+        "cross: Codex answered (relayed reply)",
+        bool(ans) and "404" in ans[0]["body"],
+        answer=ans[0]["body"][:200] if ans else None,
+    ):
         return False
     c["sup"].once(wait=0)
-    step("cross: answer delivered to Claude's supervisor", env.delivery(ans[0]["id"])[0]["state"] == "delivered_to_supervisor")
+    step(
+        "cross: answer delivered to Claude's supervisor",
+        env.delivery(ans[0]["id"])[0]["state"] == "delivered_to_supervisor",
+    )
     second = run_claude(c, "Continue. If Agent Office delivered an answer to you, acknowledge it with `agentlink ack <id>` and "
                            "tell me the number it contains.", resume=first.get("session_id"), turns=6)  # fmt: skip
     EVIDENCE["results"]["cross_claude_receive"] = second
     st = env.delivery(ans[0]["id"])[0]
     ok = st["state"] in ("acknowledged", "processed")
-    step("cross: the same Claude session got the answer injected and acknowledged it", ok, delivery=st, claude_said=second["result"][:200])
+    step(
+        "cross: the same Claude session got the answer injected and acknowledged it",
+        ok,
+        delivery=st,
+        claude_said=second["result"][:200],
+    )
     step("cross: Claude's final text mentions 404", "404" in second["result"])
     ADAPTERS["claude-code"].uninstall("project", str(c["ws"]))
     return ok

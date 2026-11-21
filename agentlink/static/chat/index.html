@@ -5,15 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>Agent Office · chat</title>
+  <link rel="icon" href="/office/marca/isotipo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/chat/style.css">
-  <script src="/static/chat/app.js" defer></script>
+  <script type="module" src="/static/chat/app.js"></script>
 </head>
 <body>
+  <!-- Evolved from the AgentLink monitor. Read-only by default; admin tokens also get message deletion. -->
   <section id="login" class="login" hidden>
     <form id="login-form">
-      <h1>AgentLink</h1>
-      <p>Monitor de tráfico entre agentes. Acceso solo con token.</p>
-      <label for="token">Token (rol <code>monitor</code> o <code>admin</code>)</label>
+      <h1>Agent Office</h1>
+      <p>Chat y estado del proyecto. Acceso solo con token.</p>
+      <label for="token">Token (rol <code>monitor</code>, <code>member</code> o <code>admin</code>)</label>
       <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="al_…" required>
       <button type="submit">Entrar</button>
       <p id="login-error" class="error" role="alert"></p>
@@ -23,34 +25,46 @@
 
   <main id="app" hidden>
     <header>
-      <strong>AgentLink</strong>
+      <strong>AGENT OFFICE</strong><span class="muted">| CHAT | PROJECT STATUS</span>
       <span id="whoami" class="muted"></span>
-      <div class="stats" id="stats" aria-live="polite"></div>
-      <button id="pause" type="button">Pausar</button>
+      <div class="stats" id="coord" aria-live="polite"></div>
+      <span id="conn" class="pill">…</span>
+      <a href="/" class="btn">Edificio 3D</a>
       <button id="logout" type="button">Salir</button>
     </header>
     <div class="layout">
       <aside>
+        <h2>Proyectos</h2>
+        <ul id="projects"></ul>
         <h2>Canales</h2>
         <ul id="channels"></ul>
-        <h2>Presencia</h2>
-        <ul id="presence"></ul>
+        <h2>Agentes</h2>
+        <ul id="agents"></ul>
+        <h2>Filtros</h2>
+        <div class="filters">
+          <input id="search" type="search" placeholder="Buscar en mensajes…" aria-label="Buscar">
+          <select id="kind" aria-label="Tipo de mensaje"><option value="">Todos los tipos</option></select>
+          <label><input id="hide-system" type="checkbox"> ocultar eventos del sistema</label>
+          <label><input id="only-mine" type="checkbox"> solo mensajes directos (con menciones)</label>
+        </div>
       </aside>
       <section class="feed">
         <div class="feed-head">
-          <h2 id="feed-title">Tráfico (todos los canales)</h2>
-          <label><input id="hide-system" type="checkbox"> ocultar system</label>
-          <span id="conn" class="pill">…</span>
+          <h2 id="feed-title">Conversaciones</h2>
+          <button id="back" type="button" hidden>← todas</button>
         </div>
-        <ol id="feed" reversed></ol>
+        <button id="older" type="button" class="older">Cargar mensajes anteriores</button>
+        <ol id="feed"></ol>
       </section>
-      <aside>
-        <h2>Tareas abiertas</h2>
-        <ul id="tasks"><li class="muted">Elige un canal</li></ul>
-        <h2>Leases activos</h2>
-        <ul id="leases"><li class="muted">Elige un canal</li></ul>
-        <h2>Contexto compartido</h2>
-        <ul id="kv"><li class="muted">Elige un canal</li></ul>
+      <aside class="details">
+        <h2>Agente</h2>
+        <div id="agent-detail" class="muted">Selecciona un agente</div>
+        <h2>Tareas</h2>
+        <ul id="tasks"></ul>
+        <h2>Leases</h2>
+        <ul id="leases"></ul>
+        <h2>Coordinación y recuperación</h2>
+        <ul id="recovery"></ul>
       </aside>
     </div>
   </main>

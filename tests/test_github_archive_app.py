@@ -96,7 +96,7 @@ def test_stats(world: World) -> None:
 def test_ui_is_served_with_strict_headers(client) -> None:
     # Agent Office: "/" is the 3D building, "/chat" the full chat (formerly the AgentLink monitor at "/").
     office = client.get("/")
-    assert office.status_code == 200 and 'src="oficina.js"' in office.text
+    assert office.status_code == 200 and 'src="/office/oficina.js"' in office.text
     assert client.get("/office/vendor/three.module.min.js").status_code == 200
     r = client.get("/chat")
     assert r.status_code == 200 and "Agent Office" in r.text

@@ -234,6 +234,22 @@ def _shape(db: Executor, rows: list[Row]) -> list[dict[str, Any]]:
     return out
 
 
+def _filters(q: dict[str, Any], where: str, params: list[Any]) -> tuple[str, list[Any]]:
+    """Optional read filters shared by channel, feed: `q` (text search), `author`, `before` (older page)."""
+    if q.get("q"):
+        term = v.text(q["q"], "q", 200).strip().lower()
+        if term:
+            where += " AND LOWER(m.body) LIKE ?"
+            params.append(f"%{term.replace('%', '').replace('_', '')}%")
+    if q.get("author"):
+        where += " AND m.author_id = (SELECT ax.id FROM agents ax WHERE ax.name = ?)"
+        params.append(v.name(q["author"], "author"))
+    if q.get("before"):
+        where += " AND m.id < ?"
+        params.append(v.integer(q["before"], "before", lo=1))
+    return where, params
+
+
 def _query_messages(db: Database, where: str, params: tuple[Any, ...], after: int | None, limit: int) -> dict[str, Any]:
     if after is None:  # first read: newest `limit` messages, returned oldest-first
         rows = db.query(f"{_SELECT} WHERE {where} ORDER BY m.id DESC LIMIT ?", (*params, limit))
@@ -270,13 +286,18 @@ def channel_messages(db: Database, p: Principal, channel: str | int, q: dict[str
             v.choice(k, "kinds", v.ALL_KINDS)
         where += f" AND m.kind IN ({','.join('?' * len(kinds))})"
         params += kinds
+    where, params = _filters(q, where, params)
     return _query_messages(db, where, tuple(params), after, limit)
 
 
 def feed(db: Database, p: Principal, q: dict[str, Any]) -> dict[str, Any]:
     after, limit = read_params(q)
-    where, params = visible_channel_ids_sql(p, "m.channel_id")
-    return _query_messages(db, where, params, after, limit)
+    where, base = visible_channel_ids_sql(p, "m.channel_id")
+    if q.get("project"):
+        where += " AND m.channel_id IN (SELECT cx.id FROM channels cx JOIN projects px ON px.id = cx.project_id WHERE px.name = ?)"
+        base = (*base, v.name(q["project"], "project"))
+    where, params = _filters(q, where, list(base))
+    return _query_messages(db, where, tuple(params), after, limit)
 
 
 def inbox(db: Database, p: Principal, q: dict[str, Any]) -> dict[str, Any]:

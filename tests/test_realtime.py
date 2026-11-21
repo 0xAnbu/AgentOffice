@@ -79,3 +79,21 @@ def test_deep_health(office: Office) -> None:
     r = office.c.get("/api/health?deep=1")
     assert r.status_code == 503 and r.json()["db"] is True and r.json()["reconciler"] is False  # loop disabled in tests
     assert office.c.get("/api/health").status_code == 200
+
+
+def test_message_search_pagination_and_project_filter(office: Office) -> None:
+    ids = [office.c.post("/api/channels/alpha-dev/messages", json={"body": f"item {i} {'needle' if i % 2 else ''}"},
+                         headers=office.h("ana-claude")).json()["id"] for i in range(6)]  # fmt: skip
+    r = office.c.get("/api/feed", params={"q": "NEEDLE"}, headers=office.admin).json()["messages"]
+    assert [m["id"] for m in r] == [ids[1], ids[3], ids[5]]
+    page = office.c.get(
+        "/api/channels/alpha-dev/messages", params={"before": ids[3], "limit": 2}, headers=office.admin
+    ).json()
+    assert [m["id"] for m in page["messages"]] == ids[1:3]
+    assert office.c.get("/api/feed", params={"project": "beta"}, headers=office.admin).json()["messages"] == []
+    assert (
+        office.c.get("/api/feed", params={"author": "ana-claude", "limit": 3}, headers=office.admin).json()["messages"][
+            -1
+        ]["id"]
+        == ids[-1]
+    )
