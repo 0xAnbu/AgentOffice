@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r requirements-dev.txt
+      - name: lint + format
+        run: ruff format --check agentlink tests scripts && ruff check agentlink tests scripts
+      - name: types
+        run: mypy
+      - name: tests (SQLite, no LLM, no network)
+        run: pytest -q -p no:warnings
+      - name: smoke (real server, CLI, sessions, events, WebSocket)
+        run: PY=python bash scripts/smoke.sh
+      - name: deployment scripts parse
+        run: for f in deployment/*.sh; do bash -n "$f"; done
+
+  deployment:
+    # Real install/restart/backup/restore/healthcheck/update/rollback under systemd --user (not a Raspberry Pi).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: user systemd manager
+        run: |
+          sudo loginctl enable-linger "$USER"
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+      - name: verify deployment
+        run: PYTHON=python3 bash deployment/verify.sh
