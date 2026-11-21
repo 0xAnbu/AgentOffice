@@ -1,87 +1,111 @@
 # Architecture
 
-## Component map
+Agent Office coordinates AI agents (Claude Code, Codex, OpenCode, any CLI) that run on the machines of five
+participants. One backend holds the state; local supervisors connect each runtime to it; a 3D building and a chat
+view show what is really happening.
 
-```mermaid
-flowchart LR
-  subgraph Clients
-    CC[Claude Code / MCP clients]
-    CLI[agentlink CLI<br/>stdlib only]
-    UI[Monitoring web UI<br/>read-only; admin can delete]
-    GH[GitHub webhooks]
-  end
-  subgraph AgentLink["AgentLink (one ASGI process or serverless function)"]
-    MCP["/mcp<br/>mcp.py"]
-    REST["/api/*<br/>api.py"]
-    SEC[security.py<br/>auth + rate limit]
-    SVC[directory · messages ·<br/>coordination · archive · github]
-    DB[db.py]
-  end
-  STORE[(SQLite WAL<br/>or Postgres/Neon)]
-  CC -->|JSON-RPC + Bearer| MCP
-  CLI -->|REST + Bearer| REST
-  UI -->|REST + Bearer, long-poll| REST
-  GH -->|HMAC SHA-256| REST
-  MCP --> SEC
-  REST --> SEC
-  SEC --> SVC --> DB --> STORE
+```text
+ participant laptops (x5)                                      Raspberry Pi / any Linux box
+ ┌──────────────────────────────────────┐                     ┌──────────────────────────────────────────────┐
+ │ runtime (Claude Code / Codex /        │  hooks / plugin /   │ agent-office.service (ONE process)            │
+ │ OpenCode / generic CLI)               │  headless exec      │  Starlette + uvicorn, 127.0.0.1:8080          │
+ │        ▲            │                 │                     │  ├─ REST API  /api/*      (agents, humans)    │
+ │        │ inject     │ hook events     │                     │  ├─ MCP       /mcp        (optional)          │
+ │ agentlink supervisor (stdlib only)    │ HTTPS (Tailscale)   │  ├─ WS        /ws/events  (dashboards)        │
+ │  local SQLite store: inbox, cursors,  │◄───────────────────►│  ├─ UI        /  (3D)   /chat                 │
+ │  sessions, held tasks, activity       │  long-poll + REST   │  ├─ reconciler loop (every 5 s)               │
+ └──────────────────────────────────────┘                     │  └─ SQLite (WAL) = single source of truth     │
+                                                              └──────────────────────────────────────────────┘
+                                                                 timers (separate processes): healthcheck → Healthchecks.io,
+                                                                 daily backup (SQLite online backup API)
 ```
 
-## Modules and responsibilities
+## Components and responsibilities
 
-| Module | Responsibility | Depends on |
-|---|---|---|
-| `config.py` | Reads environment variables with safe defaults | — |
-| `db.py` | One SQL API over SQLite/Postgres, transactions, idempotent migrations | sqlite3, pg8000 (lazy) |
-| `security.py` | Tokens (generation, SHA-256), `Principal`, roles, rate limiting | db |
-| `validation.py` | Validation at the trust boundary (types, sizes, formats) | — |
-| `directory.py` | Agents, tokens, channels, membership, **access control** (`channel_for`), audit | db, security |
-| `messages.py` | Posting, cursors, long-poll, feed, inbox, compact text format | directory |
-| `coordination.py` | Tasks (atomic claim), leases with TTL and path overlap, versioned KV, presence | messages |
-| `archive.py` | Verified export, purge with SHA-256, statistics | messages |
-| `github.py` | HMAC verification and event summaries | messages |
-| `api.py` / `mcp.py` | Transports: they authenticate, apply rate limits, call services and serialize. **No business rules** | services |
-| `app.py` | Route assembly, security headers, static files | api, mcp |
-| `hub.py` | Lazy wiring of settings + DB + auth (serverless-safe) | everything |
-| `serve.py` / `api/index.py` | Entry points: self-hosted (uvicorn) / Vercel | app |
-| `cli.py` | Client with no dependencies; cursor persisted in `~/.agentlink` | — |
-| `admin.py` (`./admin`) | Human admin tool (Spanish, tables): agents, tokens, members, deletion | cli |
+| Component | Where | Responsibility | Never does |
+|---|---|---|---|
+| `agentlink/` backend | server | Identity, projects, channels, messages, tasks + leases, coordinator election, sessions, deliveries, durable event log, recovery reconciler, API/WS/UI | Execute code, talk to an LLM |
+| Reconciler (`recovery.reconcile`) | inside the backend | Expire sessions/leases, orphan tasks, stall detection, coordinator loss/offers, overdue deliveries. Idempotent. | Hold state outside SQLite |
+| Supervisor (`agentlink supervise`) | each laptop | Long-polls the inbox, persists before acknowledging, reports delivery states, beats device + session heartbeats, renews task leases **only with real progress**, writes local "authority lost" notices | Decide coordination |
+| Hooks / plugin (`agentlink hook ...`) | each runtime | Register sessions/sub-agents, inject pending messages at safe points, report progress, block `Stop` while urgent work is pending | Fail the runtime (they fail open) |
+| Adapters (`agentlink/adapters.py`) | each laptop | Install/uninstall the runtime integration reversibly; declare an honest capability matrix | Bypass a runtime's trust/approval prompts |
+| 3D office (`static/office/`) | browser | Visualise sessions as the original oficina-virtual characters on floors, animate real events | Write coordination state; simulate in production |
+| Chat (`static/chat/`) | browser | Conversations, threads, search, deliveries, tasks, leases, coordinator, recovery history | Duplicate business logic |
+| `deployment/` | server | systemd unit, install/update/rollback, backup/restore, health check timer | Run a second coordination server |
 
-Rule that keeps changes from conflicting: **services don't know about HTTP and transports
-don't know about SQL**. A new feature = a function in a service + a line in `api.routes`
-+ (optionally) an entry in `mcp.TOOLS`.
+## Single source of truth
 
-## Trust boundaries
+Everything that matters is a row in one SQLite database (WAL, `synchronous=NORMAL`, `foreign_keys=ON`):
+`projects`, `project_members`, `agents`, `tokens`, `channels`, `messages`, `tasks`, `task_deps`, `checkpoints`,
+`leases`, `sessions`, `devices`, `coordinators`, `deliveries`, `events`, `kv`, `audit`. All writes go through
+`db.transaction()` (`BEGIN IMMEDIATE` + a process lock), so concurrent claims are serialised by the database and
+every authority decision is a conditional `UPDATE` (fencing). The local supervisor store is a cache of what was
+received; losing it loses nothing (the server re-delivers from cursors and delivery receipts — tested).
 
-1. **Network → transport**: every route except `/api/health`, `/api/agent-guide` and the webhook
-   requires `Authorization: Bearer al_…`. The body is limited to 256 KB before parsing.
-2. **Transport → service**: every operation on a channel goes through `directory.channel_for()`,
-   which checks role + membership. Queries that span several channels use
-   `visible_channel_ids_sql(principal, column)`.
-3. **GitHub → webhook**: HMAC-SHA256 over the raw body compared in constant time; idempotent per
-   `X-GitHub-Delivery`. `event` messages can only be created by the server.
-4. **Server → browser**: strict CSP (`script-src 'self'`, no inline), and the UI only uses `textContent`.
+All timeouts are judged on the **server clock** (`security.now_ms()`); clients never decide that someone else
+expired.
 
-## Data flow for one message
+## Projects and identity
 
-1. `POST /api/channels/dev/messages` → `authenticate` (hash → `tokens` lookup) → `check_write` (DB window).
-2. `messages.post_message`: validates → transaction: dedupe by `client_id`, resolves `reply_to`/thread,
-   `INSERT … RETURNING id`, inserts `mentions` → `notifier.bump()`.
-3. The agents waiting in `long_poll` wake up (in the same process) or see it on their next DB poll
-   (`AGENTLINK_POLL_INTERVAL`, other serverless instances).
+- **Project** — the isolation unit: channels, tasks, coordinator, sessions and events belong to one project.
+  A member of `alpha` cannot read `beta` (tested); a `monitor` token can be scoped to projects.
+- **Agent** — a credential (name + role `admin|member|monitor` + bearer tokens hashed with SHA-256). Agent Office
+  adds `owner` (the human participant, e.g. `dev01`), `specialization` (decides the floor) and `coord_priority`.
+- **Session** — one running runtime instance of an agent (`ses_…`), with `runtime`, `model`, `device`,
+  `parent_id` (sub-agents), state and heartbeats. An agent can have many sessions; authority (task leases,
+  coordinator role) is held by a *session*, not by the agent, so a dead session loses it even if the agent has
+  others alive.
+- **Device** — a participant's machine; its heartbeat proves the supervisor is alive, and **never** renews
+  sessions, leases or the coordinator role.
 
-## Data model
+## Coordination vs. execution
 
-`agents` 1─n `tokens` · `channels` n─n `agents` (via `members`) · `messages` (global monotonic id = cursor,
-`thread_id`, `reply_to`, `client_id` unique per author) · `mentions(agent_id, message_id)` · `tasks` (with `version`)
-· `leases(channel_id, resource)` unique · `kv(channel_id, key)` with `version` · `presence` · `audit` ·
-`ratelimit` · `archives`. Timestamps in epoch ms; JSON stored as TEXT (portable).
+The backend coordinates; it never executes. Agents do the work in their own repositories and report through the
+protocol (messages, task updates, checkpoints). Because the server cannot see or undo local Git operations, the
+guarantees stop at the protocol boundary: a stale holder's *writes to Agent Office* are refused (fencing), and the
+supervisor tells the runtime it lost authority, but a `git push` made outside Agent Office cannot be blocked
+(`agentlink check-lease` exists for pre-push hooks). See [RECOVERY.md](RECOVERY.md#git).
 
-## Extending it
+## Events
 
-- **New message kind**: add it to `validation.POSTABLE_KINDS` and document it in `static/agent-guide.md`.
-- **New MCP tool**: an entry in `mcp.TOOLS` + a case in `_dispatch` (and in `WRITE_TOOLS` if it writes).
-- **New schema migration**: bump `SCHEMA_VERSION` and add statements guarded by version in `db.migrate`
-  (current version: 1).
-- **Real-time push (SSE/WebSockets)**: replace `Notifier` with Postgres `LISTEN/NOTIFY` or an
-  external broker; the long-poll API contract can stay the same.
+Every state change emits an event **in the same transaction** (`events.emit(tx, …)`), so there is never a state
+change without its event or vice versa (tested by injecting a crash between both). Events have a monotonic id; the
+dashboards read them with a cursor over WebSocket (`/ws/events`) or long-poll (`/api/events`) and receive
+`resync` when their cursor falls behind retention. 33 event types: `message.created`, `task.*` (created, claimed,
+updated, renewed, released, orphaned, recovered, blocked, unblocked, checkpoint, stale_write, wait_timeout),
+`lease.*`, `session.*` (registered, ended, expired, stalled, resumed), `agent.online/offline`, `coordinator.*`
+(offered, accepted, declined, offer_expired, lost, unavailable, released), `delivery.overdue`, `project.created`,
+`kv.set`.
+
+## Backend ↔ frontend
+
+The UI is served by the same process (`/` → 3D office, `/chat`), uses the same token-authenticated API as agents
+and holds no state of its own:
+
+1. `GET /api/office/snapshot` — building layout, sessions (with floor), tasks, leases, coordinators, devices and the
+   current event cursor.
+2. `POST /api/ws-ticket` → single-use, 30-second ticket (the bearer token never goes in a URL) →
+   `WS /ws/events?ticket=…&after=<cursor>` replays missed events then streams live ones.
+3. On reconnect: resume from the last cursor; on `resync`: reload the snapshot.
+
+The 3D scene is rebuilt only when the *layout* changes (floors, rooms, desks); heartbeats only update labels and
+poses. Animations are a visual queue derived from events (message → note flies, assignment → folder carried, via
+the elevator across floors), independent of and never blocking the real delivery queue. There is **no simulation
+fallback**: without a token or backend the page shows the login / a disconnected state.
+
+## Building model
+
+Floors come from `AGENTLINK_OFFICE_CONFIG` (JSON) or the built-in default (top to bottom): Coordinación,
+Seguridad / QA, DevOps / Infraestructura, Backend / APIs (fallback floor), Frontend / UX. A session lands on the
+first floor whose `match` list contains its specialization (session specialization, else agent specialization,
+else the fallback). On each floor, each owner gets a room; each session gets a desk and a character.
+
+## Persistence and operations
+
+- Schema migrations are versioned (`schema_version`), forward-only, applied at start; the backend refuses to run on
+  a schema newer than its code (safe rollback).
+- Backups use the SQLite online backup API (consistent under WAL, verified with `integrity_check`).
+- Logs: journald (`journalctl -u agent-office`). Health: `/api/health` (process) and `/api/health?deep=1`
+  (SQLite read/write + reconciler heartbeat; 503 otherwise).
+- Inherited from AgentLink and **not** part of the supported Agent Office deployment: the Postgres/serverless mode
+  (not verified with schema v2) and the Vercel deployment (removed).

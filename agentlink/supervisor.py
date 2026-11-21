@@ -304,9 +304,24 @@ class Supervisor:
         self.session_beats()
         renewed = self.renew_leases()
         pushed = self.push_idle()
+        headless = None if pushed else self.headless_if_enabled()
         self.flush_reports()
         self.store.put("supervisor_status", {"at": time.time(), "pid": __import__("os").getpid(), "version": VERSION})
-        return {"new": new, "renewed": renewed, "pushed": pushed}
+        return {"new": new, "renewed": renewed, "pushed": pushed, "headless": headless}
+
+    def headless_if_enabled(self) -> dict[str, Any] | None:
+        """Opt-in autonomous delivery for runtimes without trusted hooks (codex, opencode): when NEW messages are
+        pending and no hooked session of that runtime is running, answer them with one headless turn. Messages that
+        were already injected are never re-run (no retry storm); a failed turn leaves them pending, not processed."""
+        runtime = self.cfg.get("runtime")
+        if runtime not in ("codex", "opencode"):
+            return None
+        cfg = self.store.get(f"adapter.{runtime}", {}) or {}
+        if not cfg.get("headless") or any(s["runtime"] == runtime for s in self.store.live_sessions()):
+            return None
+        if not [m for m in self.store.pending(only_new=True) if int(m["message_id"]) > 0]:
+            return None
+        return self.exec_deliver(runtime, cfg.get("workdir") or os.getcwd())
 
     def run_forever(self) -> None:
         signal.signal(signal.SIGTERM, lambda *_: setattr(self, "running", False))

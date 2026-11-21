@@ -225,3 +225,36 @@ def test_stale_supervisor_report_is_rejected_cleanly(pair: tuple[Participant, Pa
     with pytest.raises(ApiError) as e:  # a supervisor cannot confirm messages addressed to someone else
         a.api.call("POST", "/api/deliveries", {"message_ids": [msg["id"]], "state": "acknowledged"})
     assert e.value.status == 404
+
+
+def test_opt_in_headless_delivery_runs_once_and_relays_answer(
+    tmp_path: Path, server: str, office: Office, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex without trusted hooks: the supervisor answers NEW messages with one headless turn (fake `codex` binary)."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    calls = tmp_path / "calls"
+    fake = bindir / "codex"
+    fake.write_text(
+        "#!/bin/sh\n"
+        f'echo run >> "{calls}"\n'
+        'while [ $# -gt 0 ]; do if [ "$1" = "-o" ]; then out="$2"; shift; fi; shift; done\n'
+        'printf "POST /login returns 200 {token}" > "$out"\n'
+    )
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}:{__import__('os').environ['PATH']}")
+    asker = Participant(tmp_path, server, office.tokens["ben-claude"], "alpha", monkeypatch, "dev02-laptop")
+    codex = Participant(tmp_path, server, office.tokens["dani-codex"], "alpha", monkeypatch, "dev04-laptop")
+    codex.sup.cfg["runtime"] = "codex"
+    assert codex.sup.once(wait=0)["headless"] is None  # not enabled: nothing runs
+    codex.store.put("adapter.codex", {"headless": True, "workdir": str(tmp_path)})
+    q = asker.api.call(
+        "POST", "/api/channels/alpha-dev/messages", {"body": "@dani-codex what does POST /login return?"}
+    )
+    res = codex.sup.once(wait=0)["headless"]
+    assert res["exit_code"] == 0 and res["processed"] == [q["id"]]
+    assert _deliv(office, q["id"]) == "processed"
+    reply = next(m for m in asker.api.call("GET", "/api/inbox")["messages"] if m.get("reply_to") == q["id"])
+    assert reply["author"] == "dani-codex" and "200 {token}" in reply["body"]
+    assert codex.sup.once(wait=0)["headless"] is None  # already handled: no second paid turn
+    assert calls.read_text().count("run") == 1

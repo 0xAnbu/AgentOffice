@@ -173,8 +173,16 @@ def cmd_connect(a: argparse.Namespace) -> None:
     ad = ADAPTERS[runtime]
     if not a.no_install:
         result["install"] = ad.install(a.scope, a.dir)
+    adapter_cfg = dict(store.get(f"adapter.{runtime}", {}) or {})
     if a.auto_resume:
-        store.put(f"adapter.{runtime}", {"auto_resume": True})
+        adapter_cfg["auto_resume"] = True
+    if a.headless_delivery:
+        if runtime not in ("codex", "opencode"):
+            _fail("--headless-delivery is only available for codex and opencode")
+        adapter_cfg.update({"headless": True, "workdir": os.path.abspath(a.workdir or os.getcwd())})
+    if a.model:
+        adapter_cfg["model"] = a.model
+    store.put(f"adapter.{runtime}", adapter_cfg)
     api.call(
         "POST",
         "/api/devices/heartbeat",
@@ -446,6 +454,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--auto-resume", action="store_true", help="allow the supervisor to resume idle sessions (spends quota)"
     )
+    p.add_argument(
+        "--headless-delivery",
+        action="store_true",
+        help="codex/opencode: answer new messages with a headless turn when no hooked session is running (spends quota)",
+    )
+    p.add_argument("--workdir", help="working directory for headless turns (default: current directory)")
+    p.add_argument("--model", help="opencode model for headless turns, e.g. opencode-go/deepseek-v4.1-flash")
     scope(p)
     p = sp.add_parser("disconnect")
     p.add_argument("--purge", action="store_true")
