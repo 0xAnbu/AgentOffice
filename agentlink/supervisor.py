@@ -1,0 +1,269 @@
+"""Local supervisor: a light, model-independent process per participant device.
+
+It keeps the coordination alive without spending a single model token:
+
+* receives messages by long-polling the inbox (AgentLink cursor), **persists them locally first**, then
+  confirms ``delivered_to_supervisor`` (at-least-once up to this process; dedup by message id);
+* reconciles after a restart from the persisted cursor and the server's pending list;
+* reports delivery states reached by the hooks, retrying until the server accepts them;
+* sends device/supervisor heartbeats and per-session heartbeats derived from *observed runtime
+  activity* (hook events), with ``progress`` only when new tool activity was seen;
+* renews task leases only for sessions with recent activity; never on device liveness alone. If a
+  renewal is refused (``stale_lease`` / ``no_progress``) it records a local notice that the hooks
+  inject at the next safe point (authority lost: stop publishing, re-check the repository);
+* optionally pushes messages into idle runtimes that support resume (opt-in per adapter).
+
+`once()` runs a single iteration so the whole loop is unit-testable without threads or sleeps.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import signal
+import subprocess
+import time
+from typing import Any
+
+from .adapters import ADAPTERS
+from .local import VERSION, Api, ApiError, Store, load_config
+
+log = logging.getLogger("agentlink.supervisor")
+
+DEVICE_EVERY = 20.0
+SESSION_EVERY = 20.0
+RENEW_EVERY = 60.0
+ACTIVE_WINDOW = 90.0  # runtime activity this recent => the session is executing
+DEAD_AFTER = 1800.0  # no runtime activity for this long and no hook => end the local session
+
+
+class Supervisor:
+    def __init__(self, api: Api, store: Store, cfg: dict[str, Any] | None = None, poll_wait: int = 20) -> None:
+        self.api = api
+        self.store = store
+        self.cfg = cfg or load_config()
+        self.poll_wait = poll_wait
+        self.last_device = 0.0
+        self.running = True
+        self.status: dict[str, Any] = {"started": time.time(), "errors": 0}
+
+    # -- receive -------------------------------------------------------------------------------------
+    def receive(self, wait: int | None = None) -> list[int]:
+        after = self.store.cursor("inbox")
+        res = self.api.call("GET", "/api/inbox", query={"after": after, "wait": self.poll_wait if wait is None else wait,
+                            "limit": 100}, timeout=(wait or self.poll_wait) + 30)  # fmt: skip
+        msgs = res.get("messages", [])
+        new = self.store.store_messages(msgs)  # 1. persist locally
+        if msgs:
+            self.store.set_cursor("inbox", int(res["next_after"]))  # 2. only then advance the receive cursor
+        self.flush_reports()  # 3. confirm to the server (retried if this fails)
+        return new
+
+    def reconcile_pending(self) -> int:
+        """After a restart: anything the server still considers pending but we never stored is re-read."""
+        pend = self.api.call("GET", "/api/deliveries/pending", query={"limit": 500}).get("pending", [])
+        have = {r["message_id"] for r in self.store.q("SELECT message_id FROM inbox")}
+        missing = [int(p["message_id"]) for p in pend if int(p["message_id"]) not in have]
+        if not missing:
+            return 0
+        res = self.api.call("GET", "/api/inbox", query={"after": min(missing) - 1, "limit": 200})
+        return len(self.store.store_messages([m for m in res.get("messages", []) if int(m["id"]) in missing]))
+
+    def flush_reports(self) -> None:
+        for state, ids in self.store.unreported().items():
+            sess = self.store.q("SELECT injected_session FROM inbox WHERE message_id = ?", (ids[0],))
+            sid = (sess[0]["injected_session"] if sess else None) if state != "delivered_to_supervisor" else None
+            try:
+                self.api.call(
+                    "POST", "/api/deliveries", {"message_ids": ids, "state": state, "session_id": sid or None}
+                )
+                self.store.set_reported(ids, state)
+            except ApiError as e:
+                if e.status == 404:  # message deleted by an admin / no longer addressed to us: stop retrying
+                    self.store.set_reported(ids, state)
+                else:
+                    raise
+
+    # -- liveness ------------------------------------------------------------------------------------
+    def device_beat(self, force: bool = False) -> None:
+        if force or time.time() - self.last_device >= DEVICE_EVERY:
+            self.api.call("POST", "/api/devices/heartbeat", {"device": self.cfg.get("device"), "supervisor_version": VERSION,
+                          "supervisor_ok": True})  # fmt: skip
+            self.last_device = time.time()
+
+    def session_beats(self, force: bool = False) -> None:
+        now = time.time()
+        for s in self.store.live_sessions():
+            if not s["server_id"]:
+                self._register_late(s)
+                continue
+            last_act = s["last_activity"] or s["started_at"]
+            if now - last_act > DEAD_AFTER:
+                self._end(s, "no runtime activity")
+                continue
+            if not force and s["last_beat"] and now - s["last_beat"] < SESSION_EVERY:
+                continue
+            progress = bool(s["last_progress"] and (s["last_progress_sent"] or 0) < s["last_progress"])
+            state = "executing" if now - last_act < ACTIVE_WINDOW and s["state"] != "idle" else "idle"
+            try:
+                r = self.api.call(
+                    "POST", f"/api/sessions/{s['server_id']}/heartbeat", {"state": state, "progress": progress}
+                )
+            except ApiError as e:
+                if e.reason == "session_ended" or e.status in (403, 404):
+                    self.store.x("UPDATE sessions SET ended_at = ?, end_reason = ? WHERE local_id = ?",
+                                 (now, f"server: {e.reason or e.status}", s["local_id"]))  # fmt: skip
+                    continue
+                raise
+            self.store.x("UPDATE sessions SET last_beat = ?, last_progress_sent = CASE WHEN ? THEN last_progress ELSE "
+                         "last_progress_sent END WHERE local_id = ?", (now, 1 if progress else 0, s["local_id"]))  # fmt: skip
+            self._track_held(s, r.get("held_tasks", []))
+            coord = r.get("coordinator") or {}
+            if coord.get("offer_for_you") and not self.store.get(f"offer:{coord['epoch']}"):
+                self.store.put(f"offer:{coord['epoch']}", True)  # the offer itself arrives as an urgent inbox message
+
+    def _register_late(self, s: dict[str, Any]) -> None:
+        try:
+            r = self.api.call("POST", "/api/sessions", {"project": s["project"] or self.cfg.get("project"), "runtime": s["runtime"],
+                              "device": self.cfg.get("device"), "specialization": self.cfg.get("specialization")})  # fmt: skip
+            self.store.x("UPDATE sessions SET server_id = ? WHERE local_id = ?", (r["id"], s["local_id"]))
+        except ApiError:
+            pass
+
+    def _end(self, s: dict[str, Any], reason: str) -> None:
+        try:
+            self.api.call("POST", f"/api/sessions/{s['server_id']}/end", {"reason": reason})
+        except ApiError:
+            pass
+        self.store.x(
+            "UPDATE sessions SET ended_at = ?, end_reason = ? WHERE local_id = ?", (time.time(), reason, s["local_id"])
+        )
+
+    # -- task leases ---------------------------------------------------------------------------------
+    def _track_held(self, s: dict[str, Any], held: list[dict[str, Any]]) -> None:
+        for t in held:
+            self.store.x(
+                "INSERT INTO held(task_id, server_session, epoch, claimed_at) VALUES (?, ?, ?, ?) ON CONFLICT(task_id) DO UPDATE "
+                "SET server_session = excluded.server_session, epoch = excluded.epoch, lost_reason = NULL "
+                "WHERE held.epoch <> excluded.epoch",
+                (t["id"], s["server_id"], t["lease_epoch"], time.time()),
+            )
+
+    def renew_leases(self, force: bool = False) -> list[dict[str, Any]]:
+        out = []
+        now = time.time()
+        for h in self.store.q("SELECT * FROM held WHERE lost_reason IS NULL"):
+            if not force and h["last_renew"] and now - h["last_renew"] < RENEW_EVERY:
+                continue
+            s = self.store.q("SELECT * FROM sessions WHERE server_id = ?", (h["server_session"],))
+            if not s or s[0]["ended_at"]:
+                continue
+            active = bool(s[0]["last_progress"] and now - s[0]["last_progress"] < RENEW_EVERY * 2)
+            try:
+                self.api.call("POST", f"/api/tasks/{h['task_id']}/renew", {"session_id": h["server_session"], "lease_epoch": h["epoch"],
+                              "progress": active})  # fmt: skip
+                self.store.x("UPDATE held SET last_renew = ? WHERE task_id = ?", (now, h["task_id"]))
+                out.append({"task_id": h["task_id"], "renewed": True})
+            except ApiError as e:
+                if e.reason in ("stale_lease", "no_progress", "lease_required") or e.status in (403, 404):
+                    self._lost(h, e.reason or str(e.status))
+                    out.append({"task_id": h["task_id"], "renewed": False, "reason": e.reason})
+                else:
+                    raise
+        return out
+
+    def _lost(self, h: dict[str, Any], reason: str) -> None:
+        self.store.x("UPDATE held SET lost_reason = ? WHERE task_id = ?", (reason, h["task_id"]))
+        notice = {
+            "id": -int(h["task_id"]) * 1000 - int(h["epoch"]),  # local-only id space (negative)
+            "channel": "local", "author": "agent-office", "kind": "alert", "priority": 1,
+            "body": f"TASK #{h['task_id']} | AUTHORITY LOST ({reason}). Your lease epoch {h['epoch']} is no longer valid. "
+                    "Do not push or report this task as done. Keep your local changes, run `agentlink check-lease "
+                    f"{h['task_id']}` and coordinate before continuing.",
+        }  # fmt: skip
+        self.store.store_messages([notice])
+        self.store.set_reported([notice["id"]], "delivered_to_supervisor")  # local notice: nothing to report upstream
+        self.store.x("UPDATE inbox SET reported = state WHERE message_id = ?", (notice["id"],))
+
+    # -- active push (opt-in resume) -----------------------------------------------------------------
+    def push_idle(self) -> list[str]:
+        used = []
+        pending = self.store.pending(only_new=True)
+        if not pending:
+            return used
+        for s in self.store.live_sessions():
+            ad = ADAPTERS.get(s["runtime"])
+            if ad is None or s["state"] != "idle":
+                continue
+            from .hooks import render
+
+            text = render(pending, s["project"], s["server_id"])
+            mech = ad.push(self.store, s, text)
+            if mech == "codex exec resume":
+                self._codex_resume(s, pending, text)
+            elif mech == "opencode run --session":
+                self._opencode_run(s, pending, text)
+            if mech:
+                self.store.mark([int(m["message_id"]) for m in pending], "injected_to_runtime", s["server_id"], mech)
+                used.append(mech)
+                break
+        return used
+
+    def _relay(self, s: dict[str, Any], pending: list[dict[str, Any]], answer: str, mech: str) -> None:
+        """The runtime answered but could not call the API itself (sandbox): post its answer as its reply."""
+        answer = answer.strip()
+        if not answer:
+            return
+        first = pending[0]
+        r = self.api.call("POST", f"/api/channels/{first['channel']}/messages", {"body": answer[:15000], "reply_to": first["message_id"],
+                          "mentions": [first["author"]] if first.get("author") else None,
+                          "data": {"relayed_by": "agentlink-supervisor", "mechanism": mech, "session_id": s["server_id"]}})  # fmt: skip
+        ids = [int(m["message_id"]) for m in pending if int(m["message_id"]) > 0]
+        self.api.call("POST", "/api/deliveries", {"message_ids": ids, "state": "processed", "session_id": s["server_id"],
+                      "evidence": {"reply_message_id": r["id"], "adapter": s["runtime"], "mechanism": mech}})  # fmt: skip
+        self.store.mark(ids, "processed")
+        self.store.set_reported(ids, "processed")
+
+    def _codex_resume(self, s: dict[str, Any], pending: list[dict[str, Any]], text: str) -> None:
+        import tempfile
+
+        with tempfile.NamedTemporaryFile("r", suffix=".txt") as out:
+            cmd = ["codex", "exec", "resume", s["local_id"], "-o", out.name, text + "\n\nAnswer the message(s) directly; "
+                   "your final message will be posted as your reply."]  # fmt: skip
+            subprocess.run(cmd, cwd=s["cwd"] or None, capture_output=True, text=True, timeout=600, check=False)
+            self._relay(s, pending, open(out.name, encoding="utf-8").read(), "codex exec resume")  # noqa: SIM115
+
+    def _opencode_run(self, s: dict[str, Any], pending: list[dict[str, Any]], text: str) -> None:
+        cmd = ["opencode", "run", "--session", s["local_id"], text + "\n\nAnswer the message(s) directly; your final "
+               "message will be posted as your reply."]  # fmt: skip
+        res = subprocess.run(cmd, cwd=s["cwd"] or None, capture_output=True, text=True, timeout=600, check=False)
+        self._relay(s, pending, res.stdout, "opencode run --session")
+
+    # -- loop ----------------------------------------------------------------------------------------
+    def once(self, wait: int | None = None) -> dict[str, Any]:
+        self.device_beat()
+        new = self.receive(wait)
+        self.session_beats()
+        renewed = self.renew_leases()
+        pushed = self.push_idle()
+        self.flush_reports()
+        self.store.put("supervisor_status", {"at": time.time(), "pid": __import__("os").getpid(), "version": VERSION})
+        return {"new": new, "renewed": renewed, "pushed": pushed}
+
+    def run_forever(self) -> None:
+        signal.signal(signal.SIGTERM, lambda *_: setattr(self, "running", False))
+        try:
+            self.reconcile_pending()
+        except (ApiError, OSError) as e:
+            log.warning("initial reconciliation failed: %s", e)
+        backoff = 1.0
+        while self.running:
+            try:
+                self.once()
+                backoff = 1.0
+            except (ApiError, OSError, ValueError, json.JSONDecodeError) as e:
+                self.status["errors"] += 1
+                self.store.put("supervisor_last_error", {"at": time.time(), "error": str(e)[:300]})
+                log.warning("supervisor iteration failed (%s); retrying in %.0fs", e, backoff)
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 60.0)

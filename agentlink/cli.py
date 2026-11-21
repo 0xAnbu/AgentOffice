@@ -280,7 +280,24 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _route(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Find the subcommand after the legacy global options (--url/--token apply to every command)."""
+    i = 0
+    while i < len(argv) and argv[i] in ("--url", "--token"):
+        os.environ["AGENTLINK_URL" if argv[i] == "--url" else "AGENTLINK_TOKEN"] = argv[i + 1]
+        i += 2
+    return (argv[i] if i < len(argv) else None), argv[i:]
+
+
 def main(argv: list[str] | None = None) -> None:
+    from . import clientcli
+
+    raw = list(sys.argv[1:] if argv is None else argv)
+    cmd, rest = _route(raw)
+    legacy_inbox = cmd == "inbox" and not ({"--pending", "--all"} & set(rest))
+    if cmd in clientcli.COMMANDS and not legacy_inbox:
+        clientcli.main(rest)
+        return
     a = build_parser().parse_args(argv)
     if a.cmd == "gen-token":
         print("al_" + secrets.token_urlsafe(32))
