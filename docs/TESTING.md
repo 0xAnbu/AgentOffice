@@ -2,7 +2,7 @@
 
 | Command | What | Needs |
 |---|---|---|
-| `make test` | all automated tests (99 at the time of writing) | nothing |
+| `make test` | all automated tests (114 at the time of writing) | nothing |
 | `make test-failures` | recovery and client failure scenarios (`tests/test_recovery.py`, `tests/test_client.py`) | nothing |
 | `make smoke` | a real uvicorn server driven through the CLI, curl and a WebSocket client | nothing |
 | `bash deployment/verify.sh` | install/service/backup/restore/healthcheck/update/rollback under `systemd --user` | Linux + systemd |
@@ -51,6 +51,7 @@
 | 16 | Duplicate work and Git | `test_old_holder_cannot_complete_with_stale_epoch` + supervisor AUTHORITY LOST notice; Git limits in RECOVERY.md (no Git operation is blocked) |
 | 17 | Transactional consistency | `test_crash_between_state_change_and_event_commits_nothing`, `test_every_message_has_its_event` |
 | 18 | Project isolation | `test_project_isolation`, `test_ws_filters_unauthorized_projects`, `test_monitor_scoped_to_project` |
+| — | External review 2026-11-21 (findings 1–8, 12–16, 20, 22) | `tests/test_review_fixes.py`: 15 behavioural tests, each verified to fail on `fbe3e7b` (before the fixes) and pass after. Findings 9–11, 17, 19 only apply to Postgres/multi-instance (unsupported); 21 (inbox starts from the oldest mention) is the intended contract |
 | — | Phase 8 integral scenario | `test_five_participants_full_lifecycle` (5 independent clients over real HTTP) |
 
 ## Credentials

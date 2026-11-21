@@ -1,20 +1,20 @@
-== sandbox /tmp/ao-verify.hRqSpp, port 26434, commit fbe3e7b
+== sandbox /tmp/ao-verify.eLHtFd, port 26931, commit 70b1ad5
 PASS  install.sh: service active, deep health ok
 PASS  secrets file mode 0640
 PASS  no token -> 401
 PASS  wrong token -> 401
 PASS  admin token accepted
-PASS  listens on loopback only (127.0.0.1:26434 )
+PASS  listens on loopback only (127.0.0.1:26931 )
 PASS  persistence across restart (3 messages)
-PASS  automatic restart after SIGKILL (pid 957921 -> 957978)
+PASS  automatic restart after SIGKILL (pid 974286 -> 974350)
 PASS  no data lost after crash
-PASS  backup during concurrent writes: integrity ok, sha256 written (agent-office-20261121T233705Z.db.gz)
-PASS  restore: back to the backup's 5 messages, service healthy, old db kept aside
+PASS  backup during concurrent writes: integrity ok, sha256 written (agent-office-20261121T235054Z.db.gz)
+PASS  restore: back to the backup's 6 messages, service healthy, old db kept aside
 PASS  replaced database kept aside
 PASS  healthcheck unit (timer target): healthy -> exactly one heartbeat sent
 PASS  app down -> healthcheck fails and NO heartbeat is sent
 PASS  healthcheck and backup timers installed
-PASS  update.sh: new release 20261121T233707Z-fbe3e7b, pre-update backup taken, healthy
-PASS  update.sh --rollback: back on 20261121T233655Z-fbe3e7b, healthy
+PASS  update.sh: new release 20261121T235056Z-70b1ad5, pre-update backup taken, healthy
+PASS  update.sh --rollback: back on 20261121T235044Z-70b1ad5, healthy
 PASS  broken release -> automatic rollback, service healthy
 == 18 checks passed on Linux x86_64, systemd 262, Python 3.14.8

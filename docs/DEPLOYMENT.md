@@ -76,7 +76,8 @@ admin token, edit the env file and `systemctl restart agent-office`.
 `healthcheck.sh` calls `/api/health?deep=1` (process up + SQLite read/write + reconciler loop alive) and pings **only
 when all pass**. If the backend, SQLite or the reconciler fail — or the whole Pi is down — no ping is sent and
 Healthchecks.io e-mails you after the grace period. The ping is an empty GET: no internal data leaves the machine.
-Detection is not instantaneous (period + grace, ≈ 10–15 min).
+Detection is not instantaneous (period + grace, ≈ 10–15 min). The endpoint is anonymous, so its write probe runs at
+most once every 10 s regardless of how often it is called.
 
 ## Backup and restore
 

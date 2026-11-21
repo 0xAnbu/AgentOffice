@@ -59,7 +59,7 @@ vendored from oficina-virtual. The client side (supervisor, hooks, CLI) uses onl
 | oficina-virtual @ `9b838e8` | — | no automated tests in the repository (`package.json` has only `start`/`estado`); Node is not installed here, so its demo server was not run |
 
 All of AgentLink's original tests still run in this repository (some adapted to the intended contract changes listed
-below); total suite now 99 passed.
+below); total suite now 114 passed.
 
 ## Known regressions / intended contract changes
 
@@ -69,5 +69,9 @@ below); total suite now 99 passed.
 4. Monitors can be scoped to projects; channels belong to a project (existing ones migrated to `default`).
 5. Postgres/serverless mode: code kept but **not verified with schema v2**; not supported for Agent Office.
 6. Vercel one-click deployment removed.
+7. Active tasks need a holder (`holder_required`); a member can no longer bind a channel to an arbitrary repo
+   (`test_members_can_create_channels_and_invite` adapted: the member creates a plain channel); `GET /api/admin/agents`
+   requires admin; clients do not follow redirects and refuse remote plain http (from the 2026-11-21 review, see
+   `tests/test_review_fixes.py`).
 
 No other regression is known.

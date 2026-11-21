@@ -50,7 +50,10 @@ queued → delivered_to_supervisor → injected_to_runtime → acknowledged → 
 | `acknowledged` | the agent (`agentlink ack <id>`) | the agent explicitly took it |
 | `processed` | the agent or the headless path, **with evidence** | `reply_message_id`, `task_id` or `checkpoint` is required |
 
-States are monotonic (a lower state reported later is ignored). `GET /api/messages/{id}/deliveries` shows them.
+States are monotonic (a lower state reported later is ignored). The supervisor keeps the evidence with the local
+state and retries with it; a local `processed` without evidence (older clients) is confirmed as `acknowledged`. Only
+the messages actually rendered into the model context (at most 8 per injection) are marked injected; the rest stay
+pending for the next safe point. `GET /api/messages/{id}/deliveries` shows them.
 
 **At-least-once, not exactly-once.** A message can be injected twice (e.g. the supervisor crashed after injecting
 but before reporting, or the runtime was resumed). Agents must treat messages as idempotent by id: the injected text

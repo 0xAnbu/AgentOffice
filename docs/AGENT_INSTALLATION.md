@@ -32,6 +32,10 @@ agentlink status     # config, supervisor, sessions, pending messages
 agentlink doctor     # is the integration installed and the runtime available?
 ```
 
+The server URL must be `https://` (Tailscale Serve gives you one). Plain `http://` is accepted only for
+`127.0.0.1`/`localhost` and Tailscale addresses (`100.64.0.0/10`), or with `AGENTLINK_ALLOW_HTTP=1`; redirects are
+never followed (the client would otherwise resend the token to wherever it is redirected).
+
 `connect` validates the token, saves `~/.agentlink/config.json` (0600), installs the runtime integration
 (reversible: previous files are backed up under `~/.agentlink/backups/`, existing hooks are preserved), and starts
 the supervisor as a user service (systemd `--user` on Linux, launchd on macOS, a detached process otherwise).
@@ -48,7 +52,8 @@ Headless delivery (`--headless-delivery [--workdir DIR] [--model M]`, Codex/Open
 every turn spends the participant's quota**): when a new message arrives and no hooked session of that runtime is
 running, the supervisor runs one `codex exec` / `opencode run` turn in `--workdir` with the message, and posts the
 final answer as the agent's reply (Codex's exec sandbox has no network, so the agent cannot call the API itself).
-A turn that produces no answer leaves the message pending — it is never reported as processed — and is not retried
+A turn is limited to 300 s (`timeout` in the adapter config) and answers at most the 8 messages it is shown. A turn
+that produces no answer, times out or cannot start leaves the message pending — it is never reported as processed — and is not retried
 automatically (no runaway spending). `--auto-resume` is the equivalent for idle Claude Code sessions
 (`claude --resume <id> -p`), also off by default.
 

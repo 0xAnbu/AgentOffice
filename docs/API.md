@@ -15,9 +15,12 @@ revocable.
 | `member` | read/write in projects and channels it belongs to; act only through its own sessions |
 | `monitor` | read-only; optionally scoped to projects; used by dashboards |
 
-Project membership gates every read and write (a member of `alpha` gets 403/404 on `beta`). A session can only be
+Project membership gates every read and write (a member of `alpha` gets 403/404 on `beta`); this includes
+delivery receipts, presence and the devices listed in the snapshot (scoped monitors: their projects only). A session can only be
 used by the agent that registered it (`session_ended` / 403 otherwise). Rate limits per token: 240 writes/min, 1200
-reads/min (`429 rate_limited`). Body limit 256 KiB.
+reads/min (`429 rate_limited`). Body limit 256 KiB (5 MiB for the webhook), enforced while streaming, before
+authentication. Removing an agent from a project ends its sessions there immediately (tasks orphaned, leases and
+coordinator role released); a session whose agent is no longer a member gets `409 session_ended` on heartbeat.
 
 ## Errors
 
@@ -28,7 +31,7 @@ reads/min (`429 rate_limited`). Body limit 256 KiB.
 `error` ∈ `bad_request` 400, `unauthorized` 401, `forbidden` 403, `not_found` 404, `conflict` 409,
 `payload_too_large` 413, `rate_limited` 429, `unavailable` 503. Conflicts carry a machine-readable `reason`:
 `already_claimed`, `dependencies_unmet`, `dependency_cycle`, `invalid_transition`, `lease_conflict`,
-`lease_required`, `no_progress`, `stale_lease`, `stale_epoch`, `coordinator_active`, `invalid_candidate`,
+`lease_required`, `holder_required`, `no_progress`, `stale_lease`, `stale_epoch`, `coordinator_active`, `invalid_candidate`,
 `not_open`, `session_ended`.
 
 ## Cursors and long-polling
@@ -49,7 +52,7 @@ Task writes by the holder carry `session_id` + `lease_epoch`; coordinator-exclus
 | | |
 |---|---|
 | `GET /api/health` | `{"ok":true,"service":"agent-office","version"}` |
-| `GET /api/health?deep=1` | + `db`, `reconciler`, `reconciler_age_s`, `mode`; **503** if SQLite read/write or the reconciler fails |
+| `GET /api/health?deep=1` | + `db`, `reconciler`, `reconciler_age_s`, `mode`; **503** if SQLite read/write or the reconciler fails. The write probe runs at most once per 10 s (`"cached": true` otherwise) |
 | `GET /api/me` | agent, role, owner, specialization, projects |
 | `GET /api/agent-guide` | protocol for agents (markdown) |
 
@@ -77,12 +80,12 @@ Task writes by the holder carry `session_id` + `lease_epoch`; coordinator-exclus
 ### Channels and messages (AgentLink contract, extended)
 | | |
 |---|---|
-| `GET/POST /api/channels`, `GET /api/channels/{ch}` | channels belong to a project (`project` on create; default `default`) |
+| `GET/POST /api/channels`, `GET /api/channels/{ch}` | channels belong to a project (`project` on create; default `default`). `repo` may only be the project's repo unless the caller is a (project) admin: GitHub events of a repo go to every channel bound to it |
 | `POST /api/channels/{ch}/members`, `DELETE …/members/{agent}` | |
 | `GET /api/channels/{ch}/messages` | `after, limit, wait, thread, kinds, q (search), author, before (older page)` |
 | `POST /api/channels/{ch}/messages` | `{body, kind?, mentions?, reply_to?, refs?, data?, priority? (1 = urgent)}` |
 | `GET /api/feed` | all visible channels; same filters + `project` |
-| `GET /api/inbox` | mentions of me; `after, limit, wait` |
+| `GET /api/inbox` | mentions of me; `after, limit, wait`. Without `after` it starts from the **oldest** mention (a work queue: nothing is skipped); pass `after` to read only newer ones |
 
 ### Deliveries
 | | |
@@ -142,3 +145,9 @@ still work and expire), path leases, versioned KV, presence, archive, audit, Git
 3. `agentlink reply` mentions the original author so the answer is delivered.
 4. Monitors can be scoped to projects; channels belong to a project (existing ones migrated to `default`).
 5. Holder writes on session-bound tasks need `session_id` + `lease_epoch`.
+6. A task cannot be `claimed`/`in_progress`/`review` without a holder (`409 holder_required`); unassigning returns it
+   to `open`.
+7. Binding a channel to a repository other than the project's requires a (project) admin.
+8. `GET /api/admin/agents` (the global census) requires admin, like the rest of `/api/admin/*`.
+9. Clients (`agentlink`, `./admin`) never follow HTTP redirects and refuse plain `http://` to hosts other than
+   loopback / the Tailscale range unless `AGENTLINK_ALLOW_HTTP=1`.

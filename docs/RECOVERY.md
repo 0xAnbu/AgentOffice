@@ -48,6 +48,11 @@ open ──claim──▶ claimed ──▶ in_progress ⇄ blocked / review ─
 ```
 
 Holder-only transitions require `session_id` + current `lease_epoch`. `done/failed/cancelled` can be reopened.
+A task is never `claimed`/`in_progress`/`review` without a holder (`409 holder_required`; unassigning returns it to
+`open`), and the reconciler returns any such row (old data, manual SQL) to `open`.
+
+Removing an agent from a project is a recovery event too: its sessions in that project end at once (tasks orphaned,
+leases released, coordinator role lost) and legacy claims without a session are orphaned.
 
 ## Reclaiming abandoned tasks
 

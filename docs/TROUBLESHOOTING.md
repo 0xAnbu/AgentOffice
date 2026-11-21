@@ -41,6 +41,12 @@ Start with: `agentlink status` and `agentlink doctor` on the participant's machi
 
 Headless delivery never retries a message automatically; re-send it or answer by hand.
 
+## "refusing plain http" / "server redirected … not followed"
+
+The client only sends the token over https, or over http to loopback/Tailscale addresses. Use the Tailscale Serve
+`https://…ts.net` URL. A redirect usually means a wrong URL (missing path prefix, http→https): fix the URL in
+`agentlink connect --server …` rather than letting the client follow it.
+
 ## Runtime not available
 
 `agentlink status` reports `runtime_available: false` (and `doctor` shows `available: false`) when the CLI is not on `PATH` for the supervisor (systemd user
