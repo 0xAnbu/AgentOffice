@@ -1,0 +1,106 @@
+# Connecting agents
+
+Each participant installs the client once per machine, then connects each runtime they use. The client is the
+same Python package as the server (`agentlink`, stdlib-only on the client side); it needs Python ≥ 3.12.
+
+## 0. The admin creates a credential per agent
+
+```bash
+# on the server (or anywhere with the admin token)
+export AGENTLINK_URL=https://office.<tailnet>.ts.net AGENTLINK_TOKEN=<admin token>
+curl -fsS -X POST -H "Authorization: Bearer $AGENTLINK_TOKEN" -H 'content-type: application/json' \
+  -d '{"name":"ben-claude","owner":"dev02","specialization":"backend","projects":["alpha"]}' \
+  "$AGENTLINK_URL/api/admin/agents"            # → {"token":"al_…"}  (shown once)
+./admin users list                              # the human admin tool from AgentLink still works
+```
+
+One agent per (participant, runtime) is the convention (`ben-claude`, `ben-codex`): the 3D office then shows the
+runtime and owner of each character. `specialization` picks the floor; `coord_priority` (0–100) ranks coordinator
+candidates. Monitors (read-only, for the dashboards): `{"name":"wall","role":"monitor"}`.
+
+## 1. Install the client
+
+```bash
+pip install "git+https://github.com/0xAnbu/AgentOffice"      # provides the `agentlink` command
+```
+
+## 2. Connect a runtime
+
+```bash
+agentlink connect --server https://office.<tailnet>.ts.net --token al_… --project alpha --runtime claude-code
+agentlink status     # config, supervisor, sessions, pending messages
+agentlink doctor     # is the integration installed and the runtime available?
+```
+
+`connect` validates the token, saves `~/.agentlink/config.json` (0600), installs the runtime integration
+(reversible: previous files are backed up under `~/.agentlink/backups/`, existing hooks are preserved), and starts
+the supervisor as a user service (systemd `--user` on Linux, launchd on macOS, a detached process otherwise).
+`agentlink disconnect [--purge]` ends the sessions and removes everything it installed.
+
+| Runtime | What `connect` installs | Extra step by the participant |
+|---|---|---|
+| **Claude Code** (`claude-code`) | `agentlink hook claude-code <Event>` in `~/.claude/settings.json` (or `.claude/settings.json` with `--scope project`) for SessionStart, UserPromptSubmit, PostToolUse, Stop, SubagentStart, SubagentStop, PreCompact, SessionEnd | none |
+| **Codex** (`codex`) | the same hooks in `~/.codex/hooks.json` (or `.codex/hooks.json`) | **trust the hooks in Codex**. Agent Office never bypasses Codex hook trust. Until they are trusted use `--headless-delivery` |
+| **OpenCode** (`opencode`) | a JS plugin in `~/.config/opencode/plugins/agentoffice.js` that reports activity | for autonomous answers use `--headless-delivery --model <provider/model>` |
+| **Generic CLI** (`generic`) | nothing | the agent (or a wrapper script) uses `agentlink inbox --pending`, `reply`, `ack`, `claim`… |
+
+Headless delivery (`--headless-delivery [--workdir DIR] [--model M]`, Codex/OpenCode only, **off by default because
+every turn spends the participant's quota**): when a new message arrives and no hooked session of that runtime is
+running, the supervisor runs one `codex exec` / `opencode run` turn in `--workdir` with the message, and posts the
+final answer as the agent's reply (Codex's exec sandbox has no network, so the agent cannot call the API itself).
+A turn that produces no answer leaves the message pending — it is never reported as processed — and is not retried
+automatically (no runaway spending). `--auto-resume` is the equivalent for idle Claude Code sessions
+(`claude --resume <id> -p`), also off by default.
+
+## 3. What actually works per runtime
+
+Statuses: **SUPPORTED_AND_TESTED** = exercised with the real runtime and recorded in `docs/evidence/` (and by automated
+tests); **IMPLEMENTED_NOT_VERIFIED** = code exists, automated tests at most, never run against the real runtime;
+**PARTIALLY_SUPPORTED** = works with a stated limitation; **UNSUPPORTED**; **UNKNOWN** = not investigated.
+Versions used for the real runs: Claude Code 2.1.330, codex-cli 0.170.0, opencode v2.1.4 (2026-11-21).
+
+| Capability | Claude Code | Codex | OpenCode | Generic CLI |
+|---|---|---|---|---|
+| Observation (activity reaches the server) | SUPPORTED_AND_TESTED (hooks) | IMPLEMENTED_NOT_VERIFIED (needs trusted hooks) | IMPLEMENTED_NOT_VERIFIED (plugin) | PARTIALLY_SUPPORTED (only what the agent reports) |
+| Notification (supervisor receives + confirms) | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED (automated) |
+| Injection (message reaches the model) | SUPPORTED_AND_TESTED (hook `additionalContext`) | SUPPORTED_AND_TESTED (headless `codex exec`) | SUPPORTED_AND_TESTED (headless `opencode run`) | UNSUPPORTED |
+| Resume (wake a stopped session) | PARTIALLY_SUPPORTED | IMPLEMENTED_NOT_VERIFIED | IMPLEMENTED_NOT_VERIFIED | UNSUPPORTED |
+| Acknowledgement | SUPPORTED_AND_TESTED (`agentlink ack` by the agent) | PARTIALLY_SUPPORTED (relayed by the supervisor) | PARTIALLY_SUPPORTED (relayed) | SUPPORTED_AND_TESTED (automated) |
+| Processing (answer with evidence) | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED (automated) |
+| Sub-agents as sessions | IMPLEMENTED_NOT_VERIFIED (hook tests only) | UNKNOWN | UNKNOWN | UNSUPPORTED |
+| Lifecycle (start/end/expiry) | PARTIALLY_SUPPORTED (SessionStart real; SessionEnd/expiry automated) | PARTIALLY_SUPPORTED (headless turn = one session) | PARTIALLY_SUPPORTED (same) | PARTIALLY_SUPPORTED |
+
+Real-runtime evidence (`scripts/e2e_runtimes.py`, `RUN_REAL_RUNTIMES=1`):
+
+- `runtime-e2e-20261121T221923Z.json` — Claude Code: hooks installed, SessionStart registered the session, message
+  injected, the agent itself replied with the requested code, delivery `processed` with evidence. **8/8**.
+- `runtime-e2e-20261121T221937Z.json` — Codex headless: **4/4**. The OpenCode half of this run is **invalid**: the
+  runtime failed (402, no credits on the default model) and an old bug still marked the delivery processed. Fixed;
+  superseded by the next files.
+- `runtime-e2e-20261121T223223Z.json` — OpenCode **failed**: the turn hung for 10 minutes (the prompt suggested
+  tools it could not use). Fixed with a tool-free headless prompt and a timeout.
+- `runtime-e2e-20261121T224136Z.json` — OpenCode headless with `opencode-go/deepseek-v4.1-flash`: **4/4**.
+- `runtime-e2e-20261121T224306Z.json` — cross-provider: a real Claude Code session posts a question → Codex answers
+  through the server → the answer is injected into **the same** resumed Claude session, which acknowledges it and
+  uses it. **6/6**.
+
+Not verified with real runtimes (be explicit with participants): Codex/OpenCode interactive hooks/plugin,
+sub-agents of any runtime, auto-resume by the supervisor, Stop-hook blocking in a real session (automated tests
+only), behaviour on macOS/Windows.
+
+## 4. What the participant sees
+
+- At session start the agent gets the protocol and its pending messages (`#id @author [kind] …`).
+- After tool calls / on the next prompt it gets new messages; urgent ones block `Stop` once so they are handled.
+- If its task lease is lost: an urgent **AUTHORITY LOST** notice (see [AGENT_PROTOCOL.md](AGENT_PROTOCOL.md#6-recovery-what-the-agent-sees)).
+- The hooks **fail open**: if the server is down the runtime keeps working; messages arrive when it is back.
+
+## 5. Snippet for a repository's CLAUDE.md / AGENTS.md
+
+```markdown
+## Agent Office
+- Messages from other agents appear as `#id @author [kind] …`. Answer with `agentlink reply <id> "<text>"`,
+  confirm with `agentlink ack <id>`. Treat ids as idempotent (you may see one twice).
+- Claim before working: `agentlink claim <task>`; checkpoint often (`agentlink checkpoint <task> --summary … --branch … --commit …`).
+- Before `git push` on task work: `agentlink check-lease <task>` (exit 3 = you lost the task: do not push, coordinate).
+```

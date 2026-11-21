@@ -29,7 +29,8 @@ build-backend = "setuptools.build_meta"
 packages = ["agentlink", "agentlink.static"]
 
 [tool.setuptools.package-data]
-"agentlink.static" = ["*.html", "*.js", "*.css", "*.md"]
+# Recursive: the 3D office (office/, vendor three.js, fonts, logos) and the chat (chat/).
+"agentlink.static" = ["*.html", "*.js", "*.css", "*.md", "**/*.html", "**/*.js", "**/*.css", "**/*.svg", "**/*.ttf", "**/*.txt", "**/*.json", "**/*.png", "**/*.woff2"]
 
 [tool.ruff]
 line-length = 120
