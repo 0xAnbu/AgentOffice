@@ -291,11 +291,75 @@ def _ddl(dialect: str) -> list[str]:
     ]
 
 
-SCHEMA_VERSION = 1
+def _ddl_v2(dialect: str) -> list[str]:
+    """Agent Office: projects, sessions, task leases with fencing, coordinator, durable events, deliveries."""
+    pk = "INTEGER PRIMARY KEY AUTOINCREMENT" if dialect == "sqlite" else "BIGSERIAL PRIMARY KEY"
+    big = "INTEGER" if dialect == "sqlite" else "BIGINT"
+    return [
+        # identity metadata assigned by an admin (never by the agent itself)
+        "ALTER TABLE agents ADD COLUMN owner TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE agents ADD COLUMN specialization TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE agents ADD COLUMN coord_priority INTEGER NOT NULL DEFAULT 0",
+        f"""CREATE TABLE IF NOT EXISTS projects (
+            id {pk}, name TEXT NOT NULL UNIQUE, repo TEXT, description TEXT NOT NULL DEFAULT '',
+            created_by {big}, created_at {big} NOT NULL)""",
+        f"""CREATE TABLE IF NOT EXISTS project_members (
+            project_id {big} NOT NULL REFERENCES projects(id), agent_id {big} NOT NULL REFERENCES agents(id),
+            role TEXT NOT NULL DEFAULT 'member', PRIMARY KEY (project_id, agent_id))""",
+        f"ALTER TABLE channels ADD COLUMN project_id {big}",
+        f"""CREATE TABLE IF NOT EXISTS devices (
+            id {pk}, owner TEXT NOT NULL, name TEXT NOT NULL, last_seen {big} NOT NULL,
+            supervisor_seen {big}, supervisor_version TEXT NOT NULL DEFAULT '', UNIQUE (owner, name))""",
+        f"""CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY, agent_id {big} NOT NULL REFERENCES agents(id), project_id {big} NOT NULL,
+            parent_id TEXT, device_id {big}, runtime TEXT NOT NULL DEFAULT 'generic', provider TEXT NOT NULL DEFAULT '',
+            model TEXT NOT NULL DEFAULT '', specialization TEXT NOT NULL DEFAULT '', capabilities TEXT,
+            label TEXT NOT NULL DEFAULT '', state TEXT NOT NULL, created_at {big} NOT NULL,
+            last_heartbeat_at {big} NOT NULL, last_progress_at {big}, progress_note TEXT NOT NULL DEFAULT '',
+            ended_at {big}, end_reason TEXT, stalled_since {big})""",
+        "CREATE INDEX IF NOT EXISTS ix_sessions_project ON sessions(project_id, ended_at)",
+        "CREATE INDEX IF NOT EXISTS ix_sessions_agent ON sessions(agent_id, ended_at)",
+        f"ALTER TABLE tasks ADD COLUMN project_id {big}",
+        "ALTER TABLE tasks ADD COLUMN assignee_session TEXT",
+        "ALTER TABLE tasks ADD COLUMN lease_epoch INTEGER NOT NULL DEFAULT 0",
+        f"ALTER TABLE tasks ADD COLUMN lease_expires_at {big}",
+        f"ALTER TABLE tasks ADD COLUMN last_progress_at {big}",
+        "ALTER TABLE tasks ADD COLUMN block_reason TEXT",
+        f"ALTER TABLE tasks ADD COLUMN orphaned_at {big}",
+        f"""CREATE TABLE IF NOT EXISTS task_deps (
+            task_id {big} NOT NULL REFERENCES tasks(id), depends_on {big} NOT NULL REFERENCES tasks(id),
+            PRIMARY KEY (task_id, depends_on))""",
+        f"""CREATE TABLE IF NOT EXISTS checkpoints (
+            id {pk}, task_id {big} NOT NULL REFERENCES tasks(id), session_id TEXT, lease_epoch INTEGER NOT NULL,
+            author_id {big} NOT NULL, data TEXT NOT NULL, created_at {big} NOT NULL)""",
+        "CREATE INDEX IF NOT EXISTS ix_checkpoints_task ON checkpoints(task_id, id)",
+        "ALTER TABLE leases ADD COLUMN session_id TEXT",
+        f"ALTER TABLE leases ADD COLUMN task_id {big}",
+        "ALTER TABLE leases ADD COLUMN lease_epoch INTEGER",
+        "ALTER TABLE messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 2",
+        f"""CREATE TABLE IF NOT EXISTS coordinators (
+            project_id {big} PRIMARY KEY REFERENCES projects(id), status TEXT NOT NULL, epoch INTEGER NOT NULL,
+            session_id TEXT, lease_expires_at {big}, offered_session TEXT, offer_expires_at {big},
+            declined TEXT, proposed_session TEXT, vacancy_notified INTEGER NOT NULL DEFAULT 0,
+            updated_at {big} NOT NULL)""",
+        f"""CREATE TABLE IF NOT EXISTS events (
+            id {pk}, project_id {big}, channel_id {big}, type TEXT NOT NULL, actor_id {big},
+            session_id TEXT, task_id {big}, message_id {big}, data TEXT, created_at {big} NOT NULL)""",
+        "CREATE INDEX IF NOT EXISTS ix_events_project ON events(project_id, id)",
+        f"""CREATE TABLE IF NOT EXISTS deliveries (
+            message_id {big} NOT NULL, agent_id {big} NOT NULL, session_id TEXT, state TEXT NOT NULL,
+            evidence TEXT, updated_at {big} NOT NULL, alerted INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (message_id, agent_id))""",
+        "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    ]
+
+
+MIGRATIONS = {1: _ddl, 2: _ddl_v2}
+SCHEMA_VERSION = max(MIGRATIONS)
 
 
 def migrate(db: Database) -> None:
-    """Idempotent: safe to call on every cold start, even concurrently."""
+    """Idempotent: safe to call on every cold start, even concurrently. Applies each pending version in order."""
     with db.transaction() as tx:
         if db.dialect == "postgres":
             tx.execute("SELECT pg_advisory_xact_lock(4242)")
@@ -304,7 +368,26 @@ def migrate(db: Database) -> None:
         current = int(row["v"]) if row and row["v"] is not None else 0
         if current >= SCHEMA_VERSION:
             return
-        for stmt in _ddl(db.dialect):
-            tx.execute(stmt)
-        tx.execute("INSERT INTO schema_version(version) VALUES (?)", (SCHEMA_VERSION,))
+        for version in range(current + 1, SCHEMA_VERSION + 1):
+            for stmt in MIGRATIONS[version](db.dialect):
+                tx.execute(stmt)
+            if version == 2:
+                _seed_v2(tx)
+            tx.execute("INSERT INTO schema_version(version) VALUES (?)", (version,))
     log.info("database migrated to schema v%s (%s)", SCHEMA_VERSION, db.dialect)
+
+
+def _seed_v2(tx: _Tx) -> None:
+    """Existing channels (and their members/tasks) move into a 'default' project so old contracts keep working."""
+    import time
+
+    now = int(time.time() * 1000)
+    tx.execute("INSERT INTO projects(name, description, created_at) VALUES ('default', 'Default project', ?)", (now,))
+    pid = tx.one("SELECT id FROM projects WHERE name = 'default'")
+    assert pid is not None
+    tx.execute("UPDATE channels SET project_id = ? WHERE project_id IS NULL", (pid["id"],))
+    tx.execute(
+        "INSERT INTO project_members(project_id, agent_id) SELECT DISTINCT ?, agent_id FROM members",
+        (pid["id"],),
+    )
+    tx.execute("UPDATE tasks SET project_id = (SELECT c.project_id FROM channels c WHERE c.id = tasks.channel_id)")

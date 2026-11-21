@@ -28,7 +28,7 @@ POSTABLE_KINDS = (
     "context",
 )
 ALL_KINDS = (*POSTABLE_KINDS, "event", "system")
-TASK_STATUSES = ("open", "claimed", "in_progress", "blocked", "review", "done", "cancelled")
+TASK_STATUSES = ("open", "claimed", "in_progress", "blocked", "review", "done", "cancelled", "failed", "orphaned")
 
 MAX_BODY = 16_000
 MAX_DATA = 32_000

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Agent Office wordmark: the cube isotype followed by three floor bars. Original artwork for this project, MIT. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3000 700" width="3000" height="700">
+  <path fill="#e3e3e3" d="M350,20 L650,190 L350,360 L50,190 Z"/>
+  <path fill="#e3e3e3" d="M30,220 L330,390 L330,690 L30,520 Z"/>
+  <path fill="#e3e3e3" d="M670,220 L670,520 L370,690 L370,390 Z"/>
+  <path fill="#e3e3e3" d="M820,80 L2950,80 L2950,230 L820,230 Z"/>
+  <path fill="#e3e3e3" d="M820,290 L2550,290 L2550,440 L820,440 Z"/>
+  <path fill="#e3e3e3" d="M820,500 L2150,500 L2150,650 L820,650 Z"/>
+</svg>

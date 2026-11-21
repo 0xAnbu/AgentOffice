@@ -41,8 +41,12 @@ ignore = [
   "S608",  # SQL built from fixed fragments only; values are always parameters
 ]
 
+[tool.ruff.lint.pycodestyle]
+# the formatter wraps at 120; hand-aligned "fmt: skip" blocks (SQL, emit calls) may reach 140
+max-line-length = 140
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S105", "S106", "S107", "S311"]
+"tests/*" = ["S105", "S106", "S107", "S311", "E501", "SIM117", "SIM105"]
 "scripts/*" = ["S106", "S311"]
 
 [tool.mypy]

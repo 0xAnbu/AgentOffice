@@ -94,18 +94,22 @@ def test_stats(world: World) -> None:
 
 
 def test_ui_is_served_with_strict_headers(client) -> None:
-    r = client.get("/")
-    assert r.status_code == 200 and "AgentLink" in r.text
+    # Agent Office: "/" is the 3D building, "/chat" the full chat (formerly the AgentLink monitor at "/").
+    office = client.get("/")
+    assert office.status_code == 200 and 'src="oficina.js"' in office.text
+    assert client.get("/office/vendor/three.module.min.js").status_code == 200
+    r = client.get("/chat")
+    assert r.status_code == 200 and "Agent Office" in r.text
     csp = r.headers["content-security-policy"]
     assert "script-src 'self'" in csp and "frame-ancestors 'none'" in csp and "unsafe-inline" not in csp
     assert r.headers["x-frame-options"] == "DENY" and r.headers["x-content-type-options"] == "nosniff"
-    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/chat/app.js").status_code == 200
     assert client.get("/api/health").headers["cache-control"] == "no-store"
     assert "access-control-allow-origin" not in client.get("/api/health").headers
 
 
 def test_ui_never_uses_innerhtml() -> None:
-    js = (STATIC / "app.js").read_text()
+    js = (STATIC / "chat" / "app.js").read_text()
     for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("):
         assert sink not in js
     assert "localStorage" not in js  # token stays per-tab

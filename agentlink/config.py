@@ -32,6 +32,20 @@ class Settings:
     max_body_bytes: int = 256 * 1024
     allowed_origins: tuple[str, ...] = field(default_factory=tuple)
     on_vercel: bool = False
+    # -- Agent Office recovery policy (seconds; all judged on the server clock) --------------------
+    mode: str = "development"  # development | testing | production (labels only: same code paths)
+    session_ttl: int = 90  # no session heartbeat for this long => session expired
+    stall_after: int = 600  # executing without progress for this long => session stalled
+    task_lease_default: int = 300  # task lease TTL when the claimer does not ask for one
+    task_lease_max: int = 3600
+    progress_window: int = 900  # a lease is only renewed if progress was reported this recently
+    coordinator_lease: int = 120  # renewed by the coordinator session's heartbeats
+    offer_timeout: int = 180  # a provisional coordinator must accept within this window
+    orphan_hold: int = 30  # orphaned tasks return to 'open' after this (they are claimable meanwhile)
+    wait_timeout: int = 3600  # blocked/waiting tasks raise an alert after this long
+    delivery_overdue: int = 900  # high-priority mention not acknowledged after this long => alert
+    reconcile_interval: float = 5.0  # background reconciler period; 0 disables the loop (tests)
+    office_config: str = ""  # path to the building/floors JSON; empty => built-in default
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -56,4 +70,17 @@ class Settings:
             max_body_bytes=_int("AGENTLINK_MAX_BODY", 256 * 1024),
             allowed_origins=origins,
             on_vercel=bool(os.environ.get("VERCEL")),
+            mode=os.environ.get("AGENTLINK_MODE", "development").strip() or "development",
+            session_ttl=_int("AGENTLINK_SESSION_TTL", 90),
+            stall_after=_int("AGENTLINK_STALL_AFTER", 600),
+            task_lease_default=_int("AGENTLINK_TASK_LEASE", 300),
+            task_lease_max=_int("AGENTLINK_TASK_LEASE_MAX", 3600),
+            progress_window=_int("AGENTLINK_PROGRESS_WINDOW", 900),
+            coordinator_lease=_int("AGENTLINK_COORDINATOR_LEASE", 120),
+            offer_timeout=_int("AGENTLINK_OFFER_TIMEOUT", 180),
+            orphan_hold=_int("AGENTLINK_ORPHAN_HOLD", 30),
+            wait_timeout=_int("AGENTLINK_WAIT_TIMEOUT", 3600),
+            delivery_overdue=_int("AGENTLINK_DELIVERY_OVERDUE", 900),
+            reconcile_interval=_float("AGENTLINK_RECONCILE_INTERVAL", 5.0),
+            office_config=os.environ.get("AGENTLINK_OFFICE_CONFIG", "").strip(),
         )
