@@ -19,7 +19,7 @@ rollback() {  # $1 = release to go back to, $2 = pre-update backup, $3 = schema 
     log "schema changed v$before -> v$now: restoring the pre-update backup $bk (writes made after the update are lost)"
     "$HERE/restore.sh" "$bk" --yes
   else
-    sctl restart agent-office.service
+    sctl reset-failed agent-office.service 2>/dev/null || true; sctl restart agent-office.service
     wait_healthy 40 || die "rollback release is not healthy either; inspect: journalctl -u agent-office"
   fi
   log "rolled back to $(basename "$to")"
@@ -52,7 +52,7 @@ for u in agent-office.service agent-office-healthcheck.service agent-office-heal
   render_unit "$NEW/deployment/$u" "$AO_UNIT_DIR/$u"
 done
 sctl daemon-reload
-sctl restart agent-office.service
+sctl reset-failed agent-office.service 2>/dev/null || true; sctl restart agent-office.service
 if wait_healthy 40; then
   prune_releases
   log "updated to $(basename "$NEW") (rollback: deployment/update.sh --rollback)"

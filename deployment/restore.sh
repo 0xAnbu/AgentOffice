@@ -39,6 +39,7 @@ mkdir -p "$ASIDE"
 for f in "$DB" "$DB-wal" "$DB-shm"; do [ -e "$f" ] && mv "$f" "$ASIDE/"; done
 install -m 600 "$WORK/restore.db" "$DB"
 if [ "$(id -u)" = 0 ] && id "$AO_USER" >/dev/null 2>&1; then chown -R "$AO_USER:$AO_USER" "$(dirname "$DB")"; fi
+sctl reset-failed agent-office.service 2>/dev/null || true
 sctl start agent-office.service
 wait_healthy 40 || die "service unhealthy after restore; previous database kept in $ASIDE"
 log "restored $BK; previous database kept in $ASIDE"
