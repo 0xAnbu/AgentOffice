@@ -12,6 +12,7 @@ User=agent-office
 Group=agent-office
 WorkingDirectory=/var/lib/agent-office
 EnvironmentFile=/etc/agent-office/agent-office.env
+Environment=PYTHONPATH=/opt/agent-office/current
 # Bound to loopback only: the private HTTPS entry point is Tailscale Serve, never a public port.
 ExecStart=/opt/agent-office/current/.venv/bin/python -m agentlink.serve --host 127.0.0.1 --port 8080 --env-file /etc/agent-office/agent-office.env
 Restart=on-failure

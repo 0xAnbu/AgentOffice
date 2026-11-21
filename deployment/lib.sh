@@ -87,7 +87,7 @@ build_release() {
   "$PYTHON" -m venv "$rel/.venv"
   "$rel/.venv/bin/pip" install -q --disable-pip-version-check -r "$rel/requirements.txt"
   # Import check before anything is switched: a broken release never becomes `current`.
-  (cd "$rel" && .venv/bin/python -c "import agentlink.app, agentlink.serve") || { rm -rf "$rel"; die "release $id does not import"; }
+  (cd / && PYTHONPATH="$rel" "$rel/.venv/bin/python" -c "import agentlink.app, agentlink.serve") || { rm -rf "$rel"; die "release $id does not import"; }
   printf '%s\n' "$rel"
 }
 
