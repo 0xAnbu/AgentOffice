@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from .adapters import ADAPTERS, detect_runtime
 from .local import VERSION, Api, ApiError, Store, api_from_config, home, load_config, save_config
@@ -37,7 +37,7 @@ def out(obj: Any) -> None:
     print(json.dumps(obj, indent=2, ensure_ascii=False))
 
 
-def _fail(msg: str, code: int = 2, **extra: Any) -> None:
+def _fail(msg: str, code: int = 2, **extra: Any) -> NoReturn:
     out({"ok": False, "error": msg, **extra})
     sys.exit(code)
 

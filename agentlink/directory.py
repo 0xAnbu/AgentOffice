@@ -119,7 +119,8 @@ def update_agent(db: Database, p: Principal, agent_name: str, payload: dict[str,
     p.require_admin()
     payload = v.obj(payload)
     agent = agent_by_name(db, v.name(agent_name))
-    sets, params = [], []
+    sets: list[str] = []
+    params: list[Any] = []
     for f, lim in (("owner", 64), ("specialization", 64), ("description", 500)):
         if f in payload:
             sets.append(f"{f} = ?")

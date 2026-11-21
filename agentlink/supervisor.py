@@ -176,7 +176,7 @@ class Supervisor:
 
     def _lost(self, h: dict[str, Any], reason: str) -> None:
         self.store.x("UPDATE held SET lost_reason = ? WHERE task_id = ?", (reason, h["task_id"]))
-        notice = {
+        notice: dict[str, Any] = {
             "id": -int(h["task_id"]) * 1000 - int(h["epoch"]),  # local-only id space (negative)
             "channel": "local", "author": "agent-office", "kind": "alert", "priority": 1,
             "body": f"TASK #{h['task_id']} | AUTHORITY LOST ({reason}). Your lease epoch {h['epoch']} is no longer valid. "
@@ -189,7 +189,7 @@ class Supervisor:
 
     # -- active push (opt-in resume) -----------------------------------------------------------------
     def push_idle(self) -> list[str]:
-        used = []
+        used: list[str] = []
         pending = self.store.pending(only_new=True)
         if not pending:
             return used

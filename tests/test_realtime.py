@@ -97,3 +97,17 @@ def test_message_search_pagination_and_project_filter(office: Office) -> None:
         ]["id"]
         == ids[-1]
     )
+
+
+def test_refuses_database_from_newer_code(tmp_path) -> None:
+    """A code rollback over a database migrated by newer code must fail loudly, never run on a schema it does not know."""
+    import pytest
+
+    from agentlink.db import SCHEMA_VERSION, Database, migrate
+
+    db = Database("", str(tmp_path / "x.db"))
+    migrate(db)
+    with db.transaction() as tx:
+        tx.execute("INSERT INTO schema_version(version) VALUES (?)", (SCHEMA_VERSION + 1,))
+    with pytest.raises(RuntimeError, match="newer than this code"):
+        migrate(db)

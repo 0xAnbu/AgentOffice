@@ -202,6 +202,10 @@ def R(fn: Handler) -> Callable[[Request], Awaitable[Response]]:
     return endpoint(fn, write=False)
 
 
+def _coord_op(fn: Callable[..., Any]) -> Callable[..., Any]:
+    return lambda h, p, r, b: fn(h.db, p, path(r, "project"), b, h.settings)
+
+
 routes = [
     Route("/api/health", health),
     Route("/api/agent-guide", agent_guide),
@@ -288,7 +292,7 @@ routes = [
     *[
         Route(
             f"/api/projects/{{project}}/coordinator/{op}",
-            W(lambda h, p, r, b, fn=fn: fn(h.db, p, path(r, "project"), b, h.settings)),
+            W(_coord_op(fn)),
             methods=["POST"],
         )
         for op, fn in (

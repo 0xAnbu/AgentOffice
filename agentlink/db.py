@@ -366,7 +366,12 @@ def migrate(db: Database) -> None:
         tx.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")
         row = tx.one("SELECT MAX(version) AS v FROM schema_version")
         current = int(row["v"]) if row and row["v"] is not None else 0
-        if current >= SCHEMA_VERSION:
+        if current > SCHEMA_VERSION:  # code rolled back over a migrated database: refuse rather than guess
+            raise RuntimeError(
+                f"database schema v{current} is newer than this code (v{SCHEMA_VERSION}); "
+                "restore the backup taken before the update (deployment/update.sh does it on rollback)"
+            )
+        if current == SCHEMA_VERSION:
             return
         for version in range(current + 1, SCHEMA_VERSION + 1):
             for stmt in MIGRATIONS[version](db.dialect):

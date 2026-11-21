@@ -1,0 +1,14 @@
+# Independent of the backend: if the backend is down this still runs, and simply does NOT ping the external monitor.
+[Unit]
+Description=Agent Office health check (pings Healthchecks.io only when healthy)
+
+[Service]
+Type=oneshot
+User=agent-office
+Group=agent-office
+EnvironmentFile=/etc/agent-office/agent-office.env
+ExecStart=/opt/agent-office/current/deployment/healthcheck.sh
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes

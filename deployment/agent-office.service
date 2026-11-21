@@ -1,0 +1,41 @@
+# Agent Office — the single backend instance (API + /ws/events + 3D UI + /chat + reconciler).
+# Installed by deployment/install.sh to /etc/systemd/system/. Paths below are the install defaults.
+[Unit]
+Description=Agent Office (distributed agent coordination)
+Documentation=file:///opt/agent-office/current/docs/DEPLOYMENT.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agent-office
+Group=agent-office
+WorkingDirectory=/var/lib/agent-office
+EnvironmentFile=/etc/agent-office/agent-office.env
+# Bound to loopback only: the private HTTPS entry point is Tailscale Serve, never a public port.
+ExecStart=/opt/agent-office/current/.venv/bin/python -m agentlink.serve --host 127.0.0.1 --port 8080 --env-file /etc/agent-office/agent-office.env
+Restart=on-failure
+RestartSec=3
+# Let in-flight requests finish; the reconciler loop stops with the process (state lives only in SQLite).
+TimeoutStopSec=20
+KillSignal=SIGTERM
+# Logs: journalctl -u agent-office
+StandardOutput=journal
+StandardError=journal
+
+# Hardening: the process can only write its own data directory.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/agent-office
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

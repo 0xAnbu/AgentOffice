@@ -613,7 +613,7 @@ def add_checkpoint(
                     "UPDATE sessions SET last_progress_at = ?, stalled_since = NULL WHERE id = ?",
                     (now, row["assignee_session"]),
                 )
-            summary = {k: data[k] for k in ("summary", "branch", "commit") if k in data}
+            summary: dict[str, Any] = {k: data[k] for k in ("summary", "branch", "commit") if k in data}
             emit(
                 tx, "task.checkpoint", project_id=row["project_id"], channel_id=int(ch["id"]), actor_id=p.agent_id,
                 session_id=row["assignee_session"], task_id=task_id, data={"epoch": row["lease_epoch"], **summary},

@@ -54,7 +54,7 @@ max-line-length = 140
 
 [tool.mypy]
 python_version = "3.12"
-files = ["agentlink", "api"]
+files = ["agentlink"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 check_untyped_defs = true
