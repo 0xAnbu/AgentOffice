@@ -64,3 +64,36 @@ Statuses: **accepted** (approved by the user or a standard low-impact measure),
   `"<name> (deleted #<id>)"` (a name `NAME_RE` can't produce) so history keeps a readable author and the name is
   free again. `?purge_messages=1` also deletes the agent's messages. The bootstrap admin and yourself can't be deleted.
 - **Not available** to `member` (agents) or `monitor`, not exposed through MCP. Not reversible: archive first if in doubt.
+
+---
+
+## Agent Office decisions (2026-11-21)
+
+### ADR-101 · One backend, SQLite WAL as the only source of truth: accepted
+- **Context**: five participants, a Raspberry Pi, no paid services; INSTRUCTIONS forbid Redis/Kubernetes/queues.
+- **Decision**: a single Starlette process; every authority decision is a conditional UPDATE in one SQLite database;
+  the reconciler runs inside that process; external checks are timers, not a second coordinator.
+- **Consequence**: no horizontal scaling (not needed); the Postgres/serverless path inherited from AgentLink is not
+  supported for Agent Office.
+
+### ADR-102 · Authority belongs to sessions, with generations: accepted
+- **Decision**: task leases and the coordinator role are held by a session and carry an epoch; every protected write
+  quotes it (fencing). Renewal requires reported progress, never a device heartbeat.
+- **Consequence**: a living but stuck runtime loses its tasks; agents must send progress and checkpoints.
+
+### ADR-103 · Events written in the same transaction as the state: accepted
+- **Decision**: `events.emit(tx, …)` inside the state change's transaction; dashboards consume the event log with
+  cursors (WebSocket + long-poll fallback) and resync from the snapshot.
+- **Consequence**: no state without event, no event without state; dashboards never infer state from chat text.
+- Supersedes ADR-003 for dashboards (WebSocket is now available: single long-lived process).
+
+### ADR-104 · Integrate runtimes through their own extension points, never bypass trust: accepted
+- **Decision**: Claude Code/Codex hooks, OpenCode plugin, and an opt-in headless turn (`codex exec`/`opencode run`)
+  when hooks are not trusted/available. Codex hook trust is left to the participant.
+- **Consequence**: Codex interactive hooks are unverified until a participant trusts them; headless turns spend quota,
+  so they are opt-in and never retried automatically.
+
+### ADR-105 · Keep the original 3D characters; no simulation in production: accepted
+- **Decision**: oficina-virtual's render, characters and animations are kept unchanged where possible; data comes only
+  from the API; the upstream simulation module is removed; synthetic activity exists only as an explicit test script
+  that drives the real API and refuses production mode.

@@ -88,8 +88,26 @@ async def realtime_checks(c: CDP, url: str, admin: str, channel: str) -> dict:
     r["js_frame_ms"] = await c.js("({simular: window.oficinaMedida.simular, rotulos: window.oficinaMedida.rotulos, "
                                   "mover: window.oficinaMedida.mover, dibujar_software_gl: window.oficinaMedida.dibujar})")  # fmt: skip
     r["builds_after_burst"] = await c.js("window.oficina3d.resumen().construcciones")
+    # Activity Center filter by agent: every visible card must involve that agent (author, mention or subject).
+    # pick an agent that appears in the cards currently held (the burst above may have evicted older ones: cap 300)
+    agent = await c.js(
+        "(() => { const cards = [...document.querySelectorAll('.tarjeta')].map(x => x.textContent);"
+        " return [...document.querySelector('[name=agente]').options].map(o => o.value).filter(Boolean)"
+        "   .find(a => cards.some(t => t.includes(a))) || ''; })()"
+    )
+    if agent:
+        r["filter_agent"] = agent
+        res = await c.js(
+            "(() => { const s = document.querySelector('[name=agente]'); s.value = " + json.dumps(agent) + ";"
+            " s.dispatchEvent(new Event('input')); const cards = [...document.querySelectorAll('.tarjeta')];"
+            " const bad = cards.filter(x => !x.textContent.includes(" + json.dumps(agent) + "))"
+            "   .map(x => x.dataset.ev + ' ' + x.querySelector('.titulo').textContent + ' | ' + x.querySelector('.ruta').textContent);"
+            " s.value = ''; s.dispatchEvent(new Event('input')); return {n: cards.length, bad: bad.slice(0, 5)}; })()"
+        )
+        r["filter_cards"], r["filter_mismatches"] = res["n"], res["bad"]
+        r["filter_ok"] = res["n"] > 0 and not res["bad"]
     r["ok"] = (r["missed_messages_recovered"] and r["duplicate_cards"] == 0 and r["latest_burst_message_shown"]
-               and r["pill_after_reconnect"] == "en vivo")  # fmt: skip
+               and r["pill_after_reconnect"] == "en vivo" and r.get("filter_ok", True))  # fmt: skip
     return r
 
 

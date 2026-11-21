@@ -1047,6 +1047,7 @@ function login(mensaje) {
   f.onsubmit = (ev) => { ev.preventDefault(); token.set($('#acceso-token').value.trim()); f.hidden = true; iniciar(); };
 }
 let conexion = null;
+let refrescoEstado = 0;
 function iniciar() {
   if (!token.get()) { login(); return; }
   actividad = actividad || crearActividad({
@@ -1055,7 +1056,15 @@ function iniciar() {
   });
   conexion = conectar({
     onSnapshot: alSnapshot,
-    onEvents: (evs, { replay }) => { actividad.agregar(evs, (e) => clasificar(e)); if (!replay) for (const e of evs) alEvento(e); },
+    onEvents: (evs, { replay }) => {
+      actividad.agregar(evs, (e) => clasificar(e));
+      if (!replay) for (const e of evs) alEvento(e);
+      // state changes (tasks, sessions, coordinator) refresh labels/poses promptly; never rebuilds unless layout changed
+      if (!replay && evs.some((e) => !e.type.startsWith('message.'))) {
+        clearTimeout(refrescoEstado);
+        refrescoEstado = setTimeout(() => conexion?.snapshot().catch(() => {}), 400);
+      }
+    },
     onEstado: (texto, clase) => actividad.estado(texto, clase),
     onAuth: () => { conexion?.cerrar(); token.clear(); login('Token inválido o revocado'); },
   });

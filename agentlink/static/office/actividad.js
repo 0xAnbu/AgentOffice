@@ -52,7 +52,7 @@ export function crearActividad({ raiz, alAgente }) {
     const hr = document.createElement('time'); hr.textContent = hora(e.ts); hr.dateTime = new Date(e.ts).toISOString();
     cab.append(ic, ti, hr);
     const ruta = document.createElement('div'); ruta.className = 'ruta';
-    const para = (e.data?.mentions || []).join(', ') || e.data?.assignee || e.data?.agent || '';
+    const para = (e.data?.mentions || []).join(', ') || e.data?.assignee || e.data?.agent || (e.data?.previous_holder ? `antes: ${e.data.previous_holder}` : '');
     ruta.textContent = [e.actor || (c.sistema ? 'Agent Office' : ''), para].filter(Boolean).join(' → ');
     const res = document.createElement('div'); res.className = 'resumen-ev';
     res.textContent = resumen(e);
