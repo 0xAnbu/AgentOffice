@@ -209,8 +209,13 @@ def scenario_headless(env: Env, sender: Api, runtime: str, name: str) -> bool:
     step(
         f"{runtime}: supervisor received and stored it", env.delivery(m["id"])[0]["state"] == "delivered_to_supervisor"
     )
-    res = p["sup"].exec_deliver(runtime, str(p["ws"]), timeout=240)
+    # The production path: `agentlink connect --headless-delivery` config, then the supervisor loop decides to run it.
+    cfg = dict(p["store"].get(f"adapter.{runtime}", {}) or {})
+    p["store"].put(f"adapter.{runtime}", {**cfg, "headless": True, "workdir": str(p["ws"])})
+    p["sup"].cfg["runtime"] = runtime
+    res = p["sup"].once(wait=0)["headless"] or {}
     EVIDENCE["results"][f"{runtime}_exec"] = res
+    EVIDENCE["results"][f"{runtime}_path"] = "Supervisor.once -> headless_if_enabled -> exec_deliver"
     step(
         f"{runtime}: runtime turn executed",
         res.get("exit_code") == 0,

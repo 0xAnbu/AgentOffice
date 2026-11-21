@@ -80,6 +80,8 @@ Real-runtime evidence (`scripts/e2e_runtimes.py`, `RUN_REAL_RUNTIMES=1`):
 - `runtime-e2e-20261121T223223Z.json` — OpenCode **failed**: the turn hung for 10 minutes (the prompt suggested
   tools it could not use). Fixed with a tool-free headless prompt and a timeout.
 - `runtime-e2e-20261121T224136Z.json` — OpenCode headless with `opencode-go/deepseek-v4.1-flash`: **4/4**.
+- `runtime-e2e-20261121T232513Z.json` — Codex **4/4** and OpenCode (`deepseek-v4.1-flash`) **4/4** through the
+  production path: `--headless-delivery` config → `Supervisor.once()` decides to run the turn → answer relayed.
 - `runtime-e2e-20261121T224306Z.json` — cross-provider: a real Claude Code session posts a question → Codex answers
   through the server → the answer is injected into **the same** resumed Claude session, which acknowledges it and
   uses it. **6/6**.

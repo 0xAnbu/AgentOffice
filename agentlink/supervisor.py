@@ -321,7 +321,7 @@ class Supervisor:
             return None
         if not [m for m in self.store.pending(only_new=True) if int(m["message_id"]) > 0]:
             return None
-        return self.exec_deliver(runtime, cfg.get("workdir") or os.getcwd())
+        return self.exec_deliver(runtime, cfg.get("workdir") or os.getcwd(), timeout=int(cfg.get("timeout") or 300))
 
     def run_forever(self) -> None:
         signal.signal(signal.SIGTERM, lambda *_: setattr(self, "running", False))
