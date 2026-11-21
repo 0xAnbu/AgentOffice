@@ -147,7 +147,8 @@ export function conectar({ onSnapshot, onEvents, onEstado, onAuth }) {
   refresco = setInterval(() => { if (!document.hidden) snapshot().catch(() => {}); }, 15000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) snapshot().catch(() => {}); });
   arrancar();
-  return { cerrar() { vivo = false; clearInterval(refresco); ws?.close(); }, snapshot };
+  // soltar(): drop the socket as a network failure would (the normal reconnection path runs); used by visual_check.py
+  return { cerrar() { vivo = false; clearInterval(refresco); ws?.close(); }, soltar() { ws?.close(); }, snapshot };
 }
 
 // ------------------------------------------------------------------------------- event -> visual category (§9.2)

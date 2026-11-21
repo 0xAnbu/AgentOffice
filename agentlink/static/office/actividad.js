@@ -43,6 +43,8 @@ export function crearActividad({ raiz, alAgente }) {
     const cat = CATEGORIAS[c.cat];
     const li = document.createElement('li');
     li.className = `tarjeta cat-${c.cat}${e.data?.priority === 1 ? ' urgente' : ''}`;
+    li.dataset.ev = String(e.id);
+    if (e.message_id) li.dataset.msg = String(e.message_id);
     li.style.setProperty('--cc', cat.color);
     const cab = document.createElement('div'); cab.className = 'cab';
     const ic = document.createElement('span'); ic.className = 'icono'; ic.textContent = cat.icono; ic.setAttribute('aria-hidden', 'true');

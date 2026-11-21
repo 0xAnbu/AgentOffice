@@ -1,6 +1,6 @@
 {
   "url": "http://127.0.0.1:8088",
-  "at": "2026-11-21T23:08:34",
+  "at": "2026-11-21T23:23:52",
   "scene": {
     "construcciones": 1,
     "pisos": [
@@ -8,7 +8,7 @@
         "key": "frontend",
         "nombre": "Frontend / UX",
         "y": 0,
-        "personas": 6,
+        "personas": 3,
         "salas": [
           "dev01",
           "dev02",
@@ -19,7 +19,7 @@
         "key": "backend",
         "nombre": "Backend / APIs",
         "y": 5.6,
-        "personas": 6,
+        "personas": 3,
         "salas": [
           "dev01",
           "dev02"
@@ -29,7 +29,7 @@
         "key": "devops",
         "nombre": "DevOps / Infraestructura",
         "y": 11.2,
-        "personas": 2,
+        "personas": 1,
         "salas": [
           "dev04"
         ]
@@ -38,7 +38,7 @@
         "key": "qa",
         "nombre": "Seguridad / QA",
         "y": 16.799999999999997,
-        "personas": 8,
+        "personas": 4,
         "salas": [
           "dev01",
           "dev05"
@@ -48,7 +48,7 @@
         "key": "coordination",
         "nombre": "Coordinación",
         "y": 22.4,
-        "personas": 2,
+        "personas": 1,
         "salas": [
           "dev01"
         ]
@@ -56,172 +56,40 @@
     ],
     "sesiones": [
       {
-        "id": "ses_3p2Yxv5oRke6rW7s",
+        "id": "ses_lqbFEhKOh0NtBBql",
         "agente": "ana-claude",
         "owner": "dev01",
         "runtime": "Sintético",
         "piso": "coordination",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_2yZjqR-Zq9DV-i0x",
-        "agente": "ana-claude",
-        "owner": "dev01",
-        "runtime": "Sintético",
-        "piso": "qa",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": true,
-        "coordinador": false
-      },
-      {
-        "id": "ses_pkifepN_oKWzHs2i",
-        "agente": "ana-claude",
-        "owner": "dev01",
-        "runtime": "Sintético",
-        "piso": "frontend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": true,
-        "coordinador": false
-      },
-      {
-        "id": "ses__1svVDBEMt9EwJS-",
-        "agente": "ana-codex",
-        "owner": "dev01",
-        "runtime": "Sintético",
-        "piso": "backend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_PIeKqKldF4RkNibv",
-        "agente": "ben-claude",
-        "owner": "dev02",
-        "runtime": "Sintético",
-        "piso": "backend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_rQ7Y7bp46rZUIUBq",
-        "agente": "ben-claude",
-        "owner": "dev02",
-        "runtime": "Sintético",
-        "piso": "backend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": true,
-        "coordinador": false
-      },
-      {
-        "id": "ses_T5uBW4Z5ah149jrc",
-        "agente": "ben-opencode",
-        "owner": "dev02",
-        "runtime": "Sintético",
-        "piso": "frontend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_ga0CKvmESJf3tkVC",
-        "agente": "cris-claude",
-        "owner": "dev03",
-        "runtime": "Sintético",
-        "piso": "frontend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_LR6c70Kon9aJhvnP",
-        "agente": "dani-codex",
-        "owner": "dev04",
-        "runtime": "Sintético",
-        "piso": "devops",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_mTrKSY-omFFKf3Vg",
-        "agente": "eva-claude",
-        "owner": "dev05",
-        "runtime": "Sintético",
-        "piso": "qa",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_fdhvEKPste0GOHnf",
-        "agente": "eva-claude",
-        "owner": "dev05",
-        "runtime": "Sintético",
-        "piso": "qa",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": true,
-        "coordinador": false
-      },
-      {
-        "id": "ses_wWTMo-XmWaL5igTS",
-        "agente": "eva-opencode",
-        "owner": "dev05",
-        "runtime": "Sintético",
-        "piso": "qa",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_E0_B9rCYYDEDHavH",
-        "agente": "ana-claude",
-        "owner": "dev01",
-        "runtime": "Sintético",
-        "piso": "coordination",
-        "estado": "libre",
+        "estado": "trabajando",
         "visible": true,
         "sub": false,
         "coordinador": true
       },
       {
-        "id": "ses_Z4GB_TN_sMkj9HDI",
+        "id": "ses_4uZSwazWwpkZmD2G",
         "agente": "ana-claude",
         "owner": "dev01",
         "runtime": "Sintético",
         "piso": "qa",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": true,
+        "coordinador": false
+      },
+      {
+        "id": "ses_Fbmn2hHR6EiQmZoJ",
+        "agente": "ana-claude",
+        "owner": "dev01",
+        "runtime": "Sintético",
+        "piso": "frontend",
         "estado": "libre",
         "visible": true,
         "sub": true,
         "coordinador": false
       },
       {
-        "id": "ses_3Mou5GSJc4ZzE49K",
-        "agente": "ana-claude",
-        "owner": "dev01",
-        "runtime": "Sintético",
-        "piso": "frontend",
-        "estado": "espera",
-        "visible": true,
-        "sub": true,
-        "coordinador": false
-      },
-      {
-        "id": "ses_ouJId5-Qs3Q2h0A0",
+        "id": "ses_oy4zf3JGtBAgDggB",
         "agente": "ana-codex",
         "owner": "dev01",
         "runtime": "Sintético",
@@ -232,29 +100,29 @@
         "coordinador": false
       },
       {
-        "id": "ses_cPOzyifRrPqdVcLv",
-        "agente": "ben-claude",
-        "owner": "dev02",
-        "runtime": "Sintético",
-        "piso": "backend",
-        "estado": "trabajando",
-        "visible": true,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_sOYV50GTQ4pCV7e9",
+        "id": "ses_trRxIunlNsUXIBT8",
         "agente": "ben-claude",
         "owner": "dev02",
         "runtime": "Sintético",
         "piso": "backend",
         "estado": "espera",
         "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_dMOopL3Au4As5Bes",
+        "agente": "ben-claude",
+        "owner": "dev02",
+        "runtime": "Sintético",
+        "piso": "backend",
+        "estado": "trabajando",
+        "visible": true,
         "sub": true,
         "coordinador": false
       },
       {
-        "id": "ses_hItbVfS_zEkIMNlJ",
+        "id": "ses_kHZ_VX78HW4FfoCB",
         "agente": "ben-opencode",
         "owner": "dev02",
         "runtime": "Sintético",
@@ -265,18 +133,18 @@
         "coordinador": false
       },
       {
-        "id": "ses_-_q5QuGO91V9VYR8",
+        "id": "ses_pm4SDABdF56xcNC9",
         "agente": "cris-claude",
         "owner": "dev03",
         "runtime": "Sintético",
         "piso": "frontend",
-        "estado": "trabajando",
+        "estado": "espera",
         "visible": true,
         "sub": false,
         "coordinador": false
       },
       {
-        "id": "ses_ogftWb33jDb1oC5M",
+        "id": "ses_tsRT6rZjqDoIgh88",
         "agente": "dani-codex",
         "owner": "dev04",
         "runtime": "Sintético",
@@ -287,7 +155,7 @@
         "coordinador": false
       },
       {
-        "id": "ses_pDrV7mKa2Ip_Vrz5",
+        "id": "ses_Tg1LV-Yyi_2Q3GHK",
         "agente": "eva-claude",
         "owner": "dev05",
         "runtime": "Sintético",
@@ -298,32 +166,32 @@
         "coordinador": false
       },
       {
-        "id": "ses_JDwyUsjOIoVTOy50",
+        "id": "ses_QgQPgKOHdAxT21Tt",
         "agente": "eva-claude",
         "owner": "dev05",
         "runtime": "Sintético",
         "piso": "qa",
-        "estado": "espera",
+        "estado": "libre",
         "visible": true,
         "sub": true,
         "coordinador": false
       },
       {
-        "id": "ses_1GKeZIRRiXDHSMUO",
+        "id": "ses_Ff8TbaXbJIA0ixCJ",
         "agente": "eva-opencode",
         "owner": "dev05",
         "runtime": "Sintético",
         "piso": "qa",
-        "estado": "espera",
+        "estado": "libre",
         "visible": true,
         "sub": false,
         "coordinador": false
       }
     ],
-    "rotulos": 24,
+    "rotulos": 12,
     "enAscensor": 0,
     "caminando": 0,
-    "fps": 1,
+    "fps": 0,
     "calidad": "alta"
   },
   "conexion": "en vivo",
@@ -336,7 +204,7 @@
         "key": "frontend",
         "nombre": "Frontend / UX",
         "y": 0,
-        "personas": 6,
+        "personas": 3,
         "salas": [
           "dev01",
           "dev02",
@@ -347,7 +215,7 @@
         "key": "backend",
         "nombre": "Backend / APIs",
         "y": 5.6,
-        "personas": 6,
+        "personas": 3,
         "salas": [
           "dev01",
           "dev02"
@@ -357,7 +225,7 @@
         "key": "devops",
         "nombre": "DevOps / Infraestructura",
         "y": 11.2,
-        "personas": 2,
+        "personas": 1,
         "salas": [
           "dev04"
         ]
@@ -366,7 +234,7 @@
         "key": "qa",
         "nombre": "Seguridad / QA",
         "y": 16.799999999999997,
-        "personas": 8,
+        "personas": 4,
         "salas": [
           "dev01",
           "dev05"
@@ -376,7 +244,7 @@
         "key": "coordination",
         "nombre": "Coordinación",
         "y": 22.4,
-        "personas": 2,
+        "personas": 1,
         "salas": [
           "dev01"
         ]
@@ -384,139 +252,7 @@
     ],
     "sesiones": [
       {
-        "id": "ses_3p2Yxv5oRke6rW7s",
-        "agente": "ana-claude",
-        "owner": "dev01",
-        "runtime": "Sintético",
-        "piso": "coordination",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_2yZjqR-Zq9DV-i0x",
-        "agente": "ana-claude",
-        "owner": "dev01",
-        "runtime": "Sintético",
-        "piso": "qa",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": true,
-        "coordinador": false
-      },
-      {
-        "id": "ses_pkifepN_oKWzHs2i",
-        "agente": "ana-claude",
-        "owner": "dev01",
-        "runtime": "Sintético",
-        "piso": "frontend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": true,
-        "coordinador": false
-      },
-      {
-        "id": "ses__1svVDBEMt9EwJS-",
-        "agente": "ana-codex",
-        "owner": "dev01",
-        "runtime": "Sintético",
-        "piso": "backend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_PIeKqKldF4RkNibv",
-        "agente": "ben-claude",
-        "owner": "dev02",
-        "runtime": "Sintético",
-        "piso": "backend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_rQ7Y7bp46rZUIUBq",
-        "agente": "ben-claude",
-        "owner": "dev02",
-        "runtime": "Sintético",
-        "piso": "backend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": true,
-        "coordinador": false
-      },
-      {
-        "id": "ses_T5uBW4Z5ah149jrc",
-        "agente": "ben-opencode",
-        "owner": "dev02",
-        "runtime": "Sintético",
-        "piso": "frontend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_ga0CKvmESJf3tkVC",
-        "agente": "cris-claude",
-        "owner": "dev03",
-        "runtime": "Sintético",
-        "piso": "frontend",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_LR6c70Kon9aJhvnP",
-        "agente": "dani-codex",
-        "owner": "dev04",
-        "runtime": "Sintético",
-        "piso": "devops",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_mTrKSY-omFFKf3Vg",
-        "agente": "eva-claude",
-        "owner": "dev05",
-        "runtime": "Sintético",
-        "piso": "qa",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_fdhvEKPste0GOHnf",
-        "agente": "eva-claude",
-        "owner": "dev05",
-        "runtime": "Sintético",
-        "piso": "qa",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": true,
-        "coordinador": false
-      },
-      {
-        "id": "ses_wWTMo-XmWaL5igTS",
-        "agente": "eva-opencode",
-        "owner": "dev05",
-        "runtime": "Sintético",
-        "piso": "qa",
-        "estado": "cerrado",
-        "visible": false,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_E0_B9rCYYDEDHavH",
+        "id": "ses_lqbFEhKOh0NtBBql",
         "agente": "ana-claude",
         "owner": "dev01",
         "runtime": "Sintético",
@@ -527,40 +263,40 @@
         "coordinador": true
       },
       {
-        "id": "ses_Z4GB_TN_sMkj9HDI",
+        "id": "ses_4uZSwazWwpkZmD2G",
         "agente": "ana-claude",
         "owner": "dev01",
         "runtime": "Sintético",
         "piso": "qa",
-        "estado": "espera",
+        "estado": "trabajando",
         "visible": true,
         "sub": true,
         "coordinador": false
       },
       {
-        "id": "ses_3Mou5GSJc4ZzE49K",
+        "id": "ses_Fbmn2hHR6EiQmZoJ",
         "agente": "ana-claude",
         "owner": "dev01",
         "runtime": "Sintético",
         "piso": "frontend",
-        "estado": "espera",
+        "estado": "trabajando",
         "visible": true,
         "sub": true,
         "coordinador": false
       },
       {
-        "id": "ses_ouJId5-Qs3Q2h0A0",
+        "id": "ses_oy4zf3JGtBAgDggB",
         "agente": "ana-codex",
         "owner": "dev01",
         "runtime": "Sintético",
         "piso": "backend",
-        "estado": "trabajando",
+        "estado": "libre",
         "visible": true,
         "sub": false,
         "coordinador": false
       },
       {
-        "id": "ses_cPOzyifRrPqdVcLv",
+        "id": "ses_trRxIunlNsUXIBT8",
         "agente": "ben-claude",
         "owner": "dev02",
         "runtime": "Sintético",
@@ -571,92 +307,109 @@
         "coordinador": false
       },
       {
-        "id": "ses_sOYV50GTQ4pCV7e9",
+        "id": "ses_dMOopL3Au4As5Bes",
         "agente": "ben-claude",
         "owner": "dev02",
         "runtime": "Sintético",
         "piso": "backend",
-        "estado": "trabajando",
+        "estado": "espera",
         "visible": true,
         "sub": true,
         "coordinador": false
       },
       {
-        "id": "ses_hItbVfS_zEkIMNlJ",
+        "id": "ses_kHZ_VX78HW4FfoCB",
         "agente": "ben-opencode",
         "owner": "dev02",
         "runtime": "Sintético",
         "piso": "frontend",
-        "estado": "libre",
-        "visible": true,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_-_q5QuGO91V9VYR8",
-        "agente": "cris-claude",
-        "owner": "dev03",
-        "runtime": "Sintético",
-        "piso": "frontend",
-        "estado": "trabajando",
-        "visible": true,
-        "sub": false,
-        "coordinador": false
-      },
-      {
-        "id": "ses_ogftWb33jDb1oC5M",
-        "agente": "dani-codex",
-        "owner": "dev04",
-        "runtime": "Sintético",
-        "piso": "devops",
         "estado": "espera",
         "visible": true,
         "sub": false,
         "coordinador": false
       },
       {
-        "id": "ses_pDrV7mKa2Ip_Vrz5",
-        "agente": "eva-claude",
-        "owner": "dev05",
+        "id": "ses_pm4SDABdF56xcNC9",
+        "agente": "cris-claude",
+        "owner": "dev03",
         "runtime": "Sintético",
-        "piso": "qa",
+        "piso": "frontend",
         "estado": "libre",
         "visible": true,
         "sub": false,
         "coordinador": false
       },
       {
-        "id": "ses_JDwyUsjOIoVTOy50",
+        "id": "ses_tsRT6rZjqDoIgh88",
+        "agente": "dani-codex",
+        "owner": "dev04",
+        "runtime": "Sintético",
+        "piso": "devops",
+        "estado": "libre",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_Tg1LV-Yyi_2Q3GHK",
         "agente": "eva-claude",
         "owner": "dev05",
         "runtime": "Sintético",
         "piso": "qa",
-        "estado": "libre",
+        "estado": "espera",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_QgQPgKOHdAxT21Tt",
+        "agente": "eva-claude",
+        "owner": "dev05",
+        "runtime": "Sintético",
+        "piso": "qa",
+        "estado": "trabajando",
         "visible": true,
         "sub": true,
         "coordinador": false
       },
       {
-        "id": "ses_1GKeZIRRiXDHSMUO",
+        "id": "ses_Ff8TbaXbJIA0ixCJ",
         "agente": "eva-opencode",
         "owner": "dev05",
         "runtime": "Sintético",
         "piso": "qa",
-        "estado": "espera",
+        "estado": "trabajando",
         "visible": true,
         "sub": false,
         "coordinador": false
       }
     ],
-    "rotulos": 24,
-    "enAscensor": 1,
-    "caminando": 4,
+    "rotulos": 12,
+    "enAscensor": 0,
+    "caminando": 7,
     "fps": 1,
     "calidad": "baja"
   },
+  "realtime": {
+    "pill_after_drop": "reconectando…",
+    "pill_after_reconnect": "en vivo",
+    "missed_messages_recovered": true,
+    "duplicate_cards": 0,
+    "burst_post_seconds": 1.4,
+    "page_roundtrip_ms_after_burst": 1,
+    "latest_burst_message_shown": true,
+    "js_frame_ms": {
+      "simular": 1.0052138804949364,
+      "rotulos": 4.031058265185215,
+      "mover": 0.6466194556362415,
+      "dibujar_software_gl": 103.40965652817292
+    },
+    "builds_after_burst": 1,
+    "ok": true
+  },
   "chat": {
     "canvas": false,
-    "mensajes": 101,
+    "mensajes": 303,
     "title": "Agent Office · chat"
   },
   "errors": [],

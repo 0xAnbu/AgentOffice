@@ -56,7 +56,44 @@ class CDP:
         path.write_bytes(base64.b64decode(r["data"]))
 
 
-async def run(url: str, token: str, out: Path, wait: float) -> int:
+def _post(url: str, admin: str, channel: str, body: str) -> int:
+    hdrs = {"Authorization": f"Bearer {admin}", "content-type": "application/json"}
+    data = json.dumps({"body": body}).encode()
+    req = urllib.request.Request(f"{url}/api/channels/{channel}/messages", data=data, headers=hdrs)  # noqa: S310
+    return int(json.loads(urllib.request.urlopen(req, timeout=10).read())["id"])  # noqa: S310 (local test server)
+
+
+async def realtime_checks(c: CDP, url: str, admin: str, channel: str) -> dict:
+    """WebSocket loss -> messages posted meanwhile -> reconnection: all appear once; then a burst of 300 events."""
+    r: dict = {}
+    await c.js("window.oficina3d.cortarConexion()")
+    await asyncio.sleep(0.2)
+    r["pill_after_drop"] = await c.js("document.querySelector('.conexion').textContent")
+    ids = [_post(url, admin, channel, f"durante el corte {i}") for i in range(5)]
+    await asyncio.sleep(6)
+    r["pill_after_reconnect"] = await c.js("document.querySelector('.conexion').textContent")
+    shown = await c.js("[...document.querySelectorAll('.tarjeta[data-msg]')].map(x => +x.dataset.msg)")
+    r["missed_messages_recovered"] = all(i in shown for i in ids)
+    evs = await c.js("[...document.querySelectorAll('.tarjeta')].map(x => x.dataset.ev)")
+    r["duplicate_cards"] = len(evs) - len(set(evs))
+    t0 = time.time()
+    burst = [_post(url, admin, channel, f"ráfaga {i}") for i in range(300)]
+    r["burst_post_seconds"] = round(time.time() - t0, 1)
+    await asyncio.sleep(5)
+    t1 = time.time()
+    await c.js("1")
+    r["page_roundtrip_ms_after_burst"] = round((time.time() - t1) * 1000)
+    shown = await c.js("[...document.querySelectorAll('.tarjeta[data-msg]')].map(x => +x.dataset.msg)")
+    r["latest_burst_message_shown"] = burst[-1] in shown
+    r["js_frame_ms"] = await c.js("({simular: window.oficinaMedida.simular, rotulos: window.oficinaMedida.rotulos, "
+                                  "mover: window.oficinaMedida.mover, dibujar_software_gl: window.oficinaMedida.dibujar})")  # fmt: skip
+    r["builds_after_burst"] = await c.js("window.oficina3d.resumen().construcciones")
+    r["ok"] = (r["missed_messages_recovered"] and r["duplicate_cards"] == 0 and r["latest_burst_message_shown"]
+               and r["pill_after_reconnect"] == "en vivo")  # fmt: skip
+    return r
+
+
+async def run(url: str, token: str, out: Path, wait: float, admin: str | None = None, channel: str = "demo-dev") -> int:
     out.mkdir(parents=True, exist_ok=True)
     prof = tempfile.mkdtemp(prefix="cdp-")
     port = 9333
@@ -98,6 +135,9 @@ async def run(url: str, token: str, out: Path, wait: float) -> int:
                 await asyncio.sleep(2.5)
                 await c.shot(out / "agente.png")
             report["scene_after"] = await c.js("window.oficina3d.resumen()")
+            if admin:
+                report["realtime"] = await realtime_checks(c, url, admin, channel)
+                print("realtime:", json.dumps(report["realtime"], ensure_ascii=False))
             await c.call("Page.navigate", url=url + "/chat")
             await asyncio.sleep(4)
             report["chat"] = await c.js(
@@ -136,7 +176,12 @@ async def run(url: str, token: str, out: Path, wait: float) -> int:
                 "builds:",
                 (report["scene_after"] or {}).get("construcciones"),
             )
-            ok = not errs and sc.get("pisos") and not report["login_visible"]
+            ok = (
+                not errs
+                and sc.get("pisos")
+                and not report["login_visible"]
+                and report.get("realtime", {"ok": True})["ok"]
+            )
             return 0 if ok else 1
     finally:
         chrome.terminate()
@@ -149,8 +194,12 @@ def main() -> None:
     ap.add_argument("--token", required=True)
     ap.add_argument("--out", default="docs/evidence/visual")
     ap.add_argument("--wait", type=float, default=12)
+    ap.add_argument(
+        "--admin-token", help="also run the WebSocket-loss and 300-event burst checks (posts test messages)"
+    )
+    ap.add_argument("--channel", default="demo-dev")
     a = ap.parse_args()
-    raise SystemExit(asyncio.run(run(a.url.rstrip("/"), a.token, Path(a.out), a.wait)))
+    raise SystemExit(asyncio.run(run(a.url.rstrip("/"), a.token, Path(a.out), a.wait, a.admin_token, a.channel)))
 
 
 if __name__ == "__main__":

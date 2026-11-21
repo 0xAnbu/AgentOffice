@@ -857,6 +857,7 @@ window.oficina3d = {
       fps: medida.real, calidad: medida.calidad,
     };
   },
+  cortarConexion() { conexion?.soltar(); },
   irAPiso(k) { volarA(vistaDePiso(k), 1); }, irACasa() { if (casa) volarA(casa, 1); }, irAPuesto(slug) { volarA(vistaDePuesto(slug), 1); },
 };
 function bucle(ahora) {
