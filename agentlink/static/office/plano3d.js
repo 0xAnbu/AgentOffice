@@ -52,7 +52,8 @@ function anchoDe(clave, n) {
   return Math.max(clave === 'juridico' ? 6 : 6.2, cols * PASO + 1.9);
 }
 
-export function distribuir(zonas, puestosDatos) {
+/** `minInterior`: Agent Office stacks several floors; they share the widest floor's width so the walls line up. */
+export function distribuir(zonas, puestosDatos, minInterior = 0) {
   const zonaDe = new Map(zonas.map((z) => [z.clave, z]));
   const norte = FILA_N.filter((c) => zonaDe.has(c));
   const sur = FILA_S.filter((c) => zonaDe.has(c));
@@ -64,7 +65,7 @@ export function distribuir(zonas, puestosDatos) {
   const ancho = (c) => anchoDe(c, (zonaDe.get(c)?.puestos || []).filter((s) => s !== 'recepcion').length);
   const anchoN = norte.reduce((a, c) => a + ancho(c), 0);
   const anchoS = sur.reduce((a, c) => a + ancho(c), 0) + 6.6;   // más la sala de juntas
-  const interior = Math.max(anchoN, anchoS);
+  const interior = Math.max(anchoN, anchoS, minInterior);
   const W = interior + SOCIAL;
   const WT = W + TERRAZA;
 

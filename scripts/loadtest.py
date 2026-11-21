@@ -78,7 +78,7 @@ def main() -> None:
         "AGENTLINK_READ_RATE": "1000000",
         "AGENTLINK_LOG_LEVEL": "WARNING",
     }
-    server = subprocess.Popen(  # noqa: S603 - fixed argv
+    server = subprocess.Popen(
         [sys.executable, "-m", "agentlink.serve", "--port", str(port), "--env-file", f"{work}/none.env"],
         cwd=ROOT,
         env=env,

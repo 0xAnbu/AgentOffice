@@ -24,12 +24,16 @@ MAX_INJECT = 8
 BODY_CHARS = 700
 
 
-def render(msgs: list[dict[str, Any]], project: str | None, session_id: str | None) -> str:
-    """Compact, deterministic notification (no LLM summarisation). Full detail stays available via the API."""
-    lines = [
-        f"[AgentOffice] {len(msgs)} message(s) addressed to you" + (f" · project {project}" if project else ""),
-        'Reply: agentlink reply <id> "text"   ·   Acknowledge only: agentlink ack <id>   ·   Details: agentlink show <id>',
-    ]
+def render(msgs: list[dict[str, Any]], project: str | None, session_id: str | None, headless: bool = False) -> str:
+    """Compact, deterministic notification (no LLM summarisation). Full detail stays available via the API.
+
+    `headless`: for runtimes that cannot run agentlink themselves; no tool hints, so they never stall on a
+    permission prompt nobody can answer."""
+    lines = [f"[AgentOffice] {len(msgs)} message(s) addressed to you" + (f" · project {project}" if project else "")]
+    if not headless:
+        lines.append(
+            'Reply: agentlink reply <id> "text"   ·   Acknowledge only: agentlink ack <id>   ·   Details: agentlink show <id>'
+        )
     for m in msgs[:MAX_INJECT]:
         body = (m.get("body") or "").strip()
         if len(body) > BODY_CHARS:
@@ -41,9 +45,9 @@ def render(msgs: list[dict[str, Any]], project: str | None, session_id: str | No
         lines.append(
             f"#{m['message_id']} {tag} from @{m.get('author')} in #{m.get('channel')} [{m.get('kind')}]: {body}"
         )
-    if len(msgs) > MAX_INJECT:
+    if len(msgs) > MAX_INJECT and not headless:
         lines.append(f"… {len(msgs) - MAX_INJECT} more: agentlink inbox --pending")
-    if session_id:
+    if session_id and not headless:
         lines.append(f"(your Agent Office session: {session_id})")
     return "\n".join(lines)
 

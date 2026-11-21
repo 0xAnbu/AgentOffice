@@ -298,6 +298,13 @@ def main(argv: list[str] | None = None) -> None:
     if cmd in clientcli.COMMANDS and not legacy_inbox:
         clientcli.main(rest)
         return
+    from .local import load_config
+
+    cfg = load_config()  # `agentlink connect` config also serves the legacy commands
+    if cfg.get("server"):
+        os.environ.setdefault("AGENTLINK_URL", cfg["server"])
+    if cfg.get("token"):
+        os.environ.setdefault("AGENTLINK_TOKEN", cfg["token"])
     a = build_parser().parse_args(argv)
     if a.cmd == "gen-token":
         print("al_" + secrets.token_urlsafe(32))

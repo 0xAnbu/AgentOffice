@@ -113,14 +113,14 @@ class ClaudeCode(Adapter):
     runtime = "claude-code"
     binary = "claude"
     capabilities = {
-        "observation": "IMPLEMENTED_NOT_VERIFIED",  # hook events = observable activity
-        "notification": "IMPLEMENTED_NOT_VERIFIED",  # supervisor stores; hooks surface it at the next safe point
-        "injection": "IMPLEMENTED_NOT_VERIFIED",  # SessionStart/UserPromptSubmit/PostToolUse additionalContext, Stop block
-        "resume": "IMPLEMENTED_NOT_VERIFIED",  # `claude --resume <id> -p` when the user enables auto-resume
-        "acknowledgement": "IMPLEMENTED_NOT_VERIFIED",  # the agent runs `agentlink ack/reply`
-        "processing": "IMPLEMENTED_NOT_VERIFIED",  # reply message authored by the agent is the evidence
-        "subagents": "IMPLEMENTED_NOT_VERIFIED",  # SubagentStart/SubagentStop hooks
-        "lifecycle": "IMPLEMENTED_NOT_VERIFIED",  # SessionStart/SessionEnd
+        "observation": "SUPPORTED_AND_TESTED",  # hook events recorded as activity (real run)
+        "notification": "SUPPORTED_AND_TESTED",  # supervisor stores; next hook surfaces it (real run)
+        "injection": "SUPPORTED_AND_TESTED",  # SessionStart additionalContext verified; UserPromptSubmit/PostToolUse/Stop: automated tests only
+        "resume": "PARTIALLY_SUPPORTED",  # `claude --resume <id> -p` re-injects at SessionStart (real run); supervisor auto-resume opt-in not verified
+        "acknowledgement": "SUPPORTED_AND_TESTED",  # the agent ran `agentlink ack` itself (real run)
+        "processing": "SUPPORTED_AND_TESTED",  # the agent ran `agentlink reply`; reply id is the evidence (real run)
+        "subagents": "IMPLEMENTED_NOT_VERIFIED",  # SubagentStart/SubagentStop hooks; automated tests only
+        "lifecycle": "PARTIALLY_SUPPORTED",  # SessionStart registration verified for real; SessionEnd only in automated tests
     }
     notes = {
         "injection": "Only at safe points: session start, prompt submit, after a tool call, or when the agent tries to stop "
@@ -213,14 +213,14 @@ class Codex(ClaudeCode):
     runtime = "codex"
     binary = "codex"
     capabilities = {
-        "observation": "IMPLEMENTED_NOT_VERIFIED",  # codex hooks (stable feature) need the participant's hook trust
-        "notification": "IMPLEMENTED_NOT_VERIFIED",
-        "injection": "IMPLEMENTED_NOT_VERIFIED",  # `codex exec resume <thread> <text>` (verified); hooks additionalContext: not verified
-        "resume": "IMPLEMENTED_NOT_VERIFIED",  # `codex exec resume`
-        "acknowledgement": "PARTIALLY_SUPPORTED",  # in exec the sandbox may block network: the adapter relays the answer
-        "processing": "IMPLEMENTED_NOT_VERIFIED",  # final message relayed as a reply authored by the agent token
-        "subagents": "IMPLEMENTED_NOT_VERIFIED",
-        "lifecycle": "PARTIALLY_SUPPORTED",
+        "observation": "IMPLEMENTED_NOT_VERIFIED",  # codex hooks need the participant's own hook trust; not exercised
+        "notification": "SUPPORTED_AND_TESTED",  # supervisor stores and confirms (real run)
+        "injection": "SUPPORTED_AND_TESTED",  # headless `codex exec` turn with the rendered message (real run)
+        "resume": "IMPLEMENTED_NOT_VERIFIED",  # `codex exec resume <thread>` / `codex queue`: not exercised
+        "acknowledgement": "PARTIALLY_SUPPORTED",  # exec sandbox has no network: the supervisor relays the answer
+        "processing": "SUPPORTED_AND_TESTED",  # final message relayed as reply authored by the agent token (real run)
+        "subagents": "UNKNOWN",  # not investigated
+        "lifecycle": "PARTIALLY_SUPPORTED",  # headless turn = one server session (registered, ended); interactive sessions need hooks
     }
     notes = {
         "hooks": "Codex runs hooks only after the participant trusts them in Codex itself. Agent Office never bypasses hook "
@@ -249,14 +249,14 @@ class OpenCode(Adapter):
     runtime = "opencode"
     binary = "opencode"
     capabilities = {
-        "observation": "IMPLEMENTED_NOT_VERIFIED",  # plugin events (tool.execute.after, session.idle)
-        "notification": "IMPLEMENTED_NOT_VERIFIED",
-        "injection": "IMPLEMENTED_NOT_VERIFIED",  # `opencode run --session <id> <text>` (verified)
-        "resume": "IMPLEMENTED_NOT_VERIFIED",  # same mechanism resumes an idle session
-        "acknowledgement": "IMPLEMENTED_NOT_VERIFIED",
-        "processing": "IMPLEMENTED_NOT_VERIFIED",
-        "subagents": "UNKNOWN",
-        "lifecycle": "PARTIALLY_SUPPORTED",
+        "observation": "IMPLEMENTED_NOT_VERIFIED",  # plugin events (tool.execute.after, session.idle): not exercised
+        "notification": "SUPPORTED_AND_TESTED",  # supervisor stores and confirms (real run)
+        "injection": "SUPPORTED_AND_TESTED",  # headless `opencode run` turn (real run, opencode-go/deepseek-v4.1-flash)
+        "resume": "IMPLEMENTED_NOT_VERIFIED",  # `opencode run --session <id>`: not exercised
+        "acknowledgement": "PARTIALLY_SUPPORTED",  # headless mode: the supervisor relays the answer
+        "processing": "SUPPORTED_AND_TESTED",  # answer relayed as reply authored by the agent token (real run)
+        "subagents": "UNKNOWN",  # not investigated
+        "lifecycle": "PARTIALLY_SUPPORTED",  # headless turn = one server session; plugin lifecycle events not exercised
     }
     notes = {
         "plugin": "A JS plugin (installed in ~/.config/opencode/plugins) reports activity to the supervisor spool."
@@ -298,12 +298,12 @@ class Generic(Adapter):
     runtime = "generic"
     capabilities = {
         "observation": "PARTIALLY_SUPPORTED",  # only what the wrapper reports via `agentlink activity`
-        "notification": "IMPLEMENTED_NOT_VERIFIED",  # local store + `agentlink inbox --pending`
+        "notification": "SUPPORTED_AND_TESTED",  # local store + `agentlink inbox --pending` (automated tests)
         "injection": "UNSUPPORTED",  # no generic way into an arbitrary model context
-        "resume": "UNSUPPORTED",
-        "acknowledgement": "IMPLEMENTED_NOT_VERIFIED",
-        "processing": "IMPLEMENTED_NOT_VERIFIED",
-        "subagents": "UNSUPPORTED",
+        "resume": "UNSUPPORTED",  # no generic mechanism
+        "acknowledgement": "SUPPORTED_AND_TESTED",  # explicit `agentlink ack` (automated tests)
+        "processing": "SUPPORTED_AND_TESTED",  # `agentlink reply` with evidence (automated tests)
+        "subagents": "UNSUPPORTED",  # not observable
         "lifecycle": "PARTIALLY_SUPPORTED",  # `agentlink session start/end` from the wrapper
     }
 

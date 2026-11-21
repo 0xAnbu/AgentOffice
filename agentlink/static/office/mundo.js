@@ -404,7 +404,9 @@ function cuboAGeo(c) {
 }
 
 // ============================================================================================ la oficina
-export async function crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg, datos }) {
+// Agent Office: `y` stacks the floor in the building; only the ground floor (`conCiudad`) builds the city, the tower
+// and its sign, so a five-floor building does not render five cities.
+export async function crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg, datos, y = 0, conCiudad = true }) {
   TX.ponerAnisotropia(Math.min(8, renderer.capabilities.getMaxAnisotropy()));
   const rnd = azar(2026);
   const texturas = { madera: TX.madera(), alfombra: TX.alfombra(), terrazo: TX.terrazo(), deck: TX.deck(), pasto: TX.pasto(), concreto: TX.concreto() };
@@ -415,11 +417,11 @@ export async function crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg,
   const { W, WT } = plano;
   const CX = WT / 2, CY = D / 2;
   const grupo = new THREE.Group();
-  grupo.position.set(-CX, 0, -CY);
+  grupo.position.set(-CX, y, -CY);
   escena.add(grupo);
   const losa = { x0: -1.1, x1: WT + 1.1, y0: -1.1, y1: D + 1.1 };
 
-  const urbe = ciudad(escena, uniformes, rnd, { w: losa.x1 - losa.x0, d: losa.y1 - losa.y0 });
+  const urbe = conCiudad ? ciudad(escena, uniformes, rnd, { w: losa.x1 - losa.x0, d: losa.y1 - losa.y0 }) : null;
 
   const lote = new Lote();
   const t = new Taller(lote);
@@ -640,7 +642,7 @@ export async function crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg,
   const letras = new THREE.Mesh(extruir(formasLogo, 18, 0.32), M.letrero);
   letras.position.set(WT / 2, -3.75, losa.y1 + 0.36);
   letras.castShadow = false;
-  grupo.add(letras);
+  if (conCiudad) grupo.add(letras);
 
   // Las luces del rack: puntos que titilan.
   let mLeds = null;
@@ -667,7 +669,7 @@ export async function crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg,
     },
     noche(n) {
       uniformes.uNoche.value = n ? 1 : 0;
-      urbe.noche(n);
+      urbe?.noche(n);
       M.letrero.emissiveIntensity = n ? 1.55 : 0;
       // De noche lo que es luz brilla de verdad (el render fino le pone el resplandor a lo que pasa de cierto brillo).
       M.luz.color.setScalar(n ? 1.9 : 1);
@@ -675,7 +677,7 @@ export async function crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg,
       M.vidrioAzul.opacity = n ? 0.1 : 0.24;
     },
     actualizar(t, dt, camara) {
-      urbe.moverCarros(dt);
+      urbe?.moverCarros(dt);
       for (const [k, v] of Object.entries(VEL)) texPantalla[k].offset.y = (-(t * v)) % 1;
       if (mLeds && t - ultimoLed > 0.18) {
         ultimoLed = t;

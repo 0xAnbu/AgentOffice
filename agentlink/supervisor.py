@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import signal
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from .adapters import ADAPTERS
@@ -239,6 +241,62 @@ class Supervisor:
         res = subprocess.run(cmd, cwd=s["cwd"] or None, capture_output=True, text=True, timeout=600, check=False)
         self._relay(s, pending, res.stdout, "opencode run --session")
 
+    def exec_deliver(self, runtime: str, workdir: str, timeout: int = 600) -> dict[str, Any]:
+        """Deliver pending messages by starting a headless turn of a runtime that has no trusted hooks.
+
+        Codex: ``codex exec`` (read-only sandbox, no network) and OpenCode: ``opencode run``. The runtime
+        answers in its final message; the supervisor posts that answer as the agent's reply (with the agent's
+        own token) and records ``processed`` with the reply id as evidence. Nothing is reported as processed
+        if the runtime produced no answer.
+        """
+        import tempfile
+
+        pending = [m for m in self.store.pending(only_new=True) if int(m["message_id"]) > 0]
+        if not pending:
+            return {"delivered": 0}
+        from .hooks import render
+
+        sess = self.api.call("POST", "/api/sessions", {"project": self.cfg.get("project"), "runtime": runtime,
+                             "device": self.cfg.get("device"), "specialization": self.cfg.get("specialization"),
+                             "label": f"{runtime} headless delivery"})  # fmt: skip
+        text = render(pending, self.cfg.get("project"), None, headless=True) + (
+            "\n\nAnswer the message(s) directly in your final message, without using any tools. "
+            "Agent Office posts your final message as your reply."
+        )
+        ids = [int(m["message_id"]) for m in pending]
+        self.store.mark(ids, "injected_to_runtime", sess["id"], f"{runtime} exec")
+        self.api.call("POST", "/api/deliveries", {"message_ids": ids, "state": "injected_to_runtime", "session_id": sess["id"],
+                      "evidence": {"adapter": runtime, "mechanism": "headless exec"}})  # fmt: skip
+        self.store.set_reported(ids, "injected_to_runtime")
+        self.api.call("POST", f"/api/sessions/{sess['id']}/heartbeat", {"state": "executing", "progress": True})
+        started = time.time()
+        if runtime == "codex":
+            with tempfile.NamedTemporaryFile("r", suffix=".txt", delete=False) as out:
+                path = out.name
+            res = subprocess.run(["codex", "exec", "--skip-git-repo-check", "-o", path, text], cwd=workdir,
+                                 capture_output=True, text=True, timeout=timeout, check=False)  # fmt: skip
+            answer = Path(path).read_text("utf-8") if Path(path).exists() else ""
+            Path(path).unlink(missing_ok=True)
+        elif runtime == "opencode":
+            model = (self.store.get("adapter.opencode", {}) or {}).get("model") or os.environ.get(
+                "AGENTLINK_OPENCODE_MODEL"
+            )
+            res = subprocess.run(["opencode", "run", "--format", "json", *(["-m", model] if model else []), text], cwd=workdir,
+                                 capture_output=True, text=True, timeout=timeout, check=False)  # fmt: skip
+            answer = _opencode_text(res.stdout)
+        else:
+            raise ValueError(f"no headless delivery for {runtime}")
+        result: dict[str, Any] = {"runtime": runtime, "session_id": sess["id"], "exit_code": res.returncode,
+                                  "seconds": round(time.time() - started, 1), "answer": answer.strip()[:2000]}  # fmt: skip
+        if answer.strip() and res.returncode == 0:
+            self._relay({"server_id": sess["id"], "runtime": runtime}, pending, answer, f"{runtime} exec")
+            result["processed"] = ids
+        else:  # stays injected_to_runtime: pending and recoverable, never a false "processed"
+            result["stderr_tail"] = (res.stderr or "")[-800:]
+            result["stdout_tail"] = (res.stdout or "")[-800:]
+        self.api.call("POST", f"/api/sessions/{sess['id']}/end", {"reason": "headless turn finished"})
+        return result
+
     # -- loop ----------------------------------------------------------------------------------------
     def once(self, wait: int | None = None) -> dict[str, Any]:
         self.device_beat()
@@ -267,3 +325,17 @@ class Supervisor:
                 log.warning("supervisor iteration failed (%s); retrying in %.0fs", e, backoff)
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 60.0)
+
+
+def _opencode_text(stdout: str) -> str:
+    """Final assistant text from `opencode run --format json` (JSON lines); falls back to raw stdout."""
+    texts: list[str] = []
+    for line in stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        part = ev.get("part") if isinstance(ev, dict) else None
+        if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
+            texts.append(str(part["text"]))
+    return "\n".join(texts)  # no assistant text => no answer (never relay raw tool/protocol output)
