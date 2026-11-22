@@ -1,0 +1,362 @@
+{
+ "repo_commit": "392f361",
+ "at": "2026-11-22T04:06:52",
+ "webgl": "SwiftShader (software)",
+ "cpu": [
+  {
+   "agentes": 0,
+   "query": "?calidad=baja&dpr=1&ahorro=0",
+   "ventana": "200,120",
+   "escala": 1,
+   "procesos": {
+    "browser": {
+     "cpu_pct": 0.3,
+     "pss_mb": 134.9
+    },
+    "zygote": {
+     "cpu_pct": 0.0,
+     "pss_mb": 35.7
+    },
+    "gpu-process": {
+     "cpu_pct": 980.8,
+     "pss_mb": 711.9
+    },
+    "utility": {
+     "cpu_pct": 0.0,
+     "pss_mb": 52.1
+    },
+    "renderer": {
+     "cpu_pct": 6.3,
+     "pss_mb": 290.4
+    },
+    "TOTAL": {
+     "cpu_pct": 987.4,
+     "pss_mb": 1224.9
+    }
+   },
+   "pagina": {
+    "fps_real": 20,
+    "fps_objetivo": 30,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 8,
+    "triangulos": 78028,
+    "geometrias": 124,
+    "texturas": 10,
+    "construcciones": 1,
+    "personas": 0,
+    "liberado": null,
+    "cuadros_dibujados_por_s": null
+   },
+   "errores": []
+  },
+  {
+   "agentes": 0,
+   "query": "?calidad=baja&dpr=1",
+   "ventana": "200,120",
+   "escala": 1,
+   "procesos": {
+    "browser": {
+     "cpu_pct": 0.2,
+     "pss_mb": 137.0
+    },
+    "zygote": {
+     "cpu_pct": 0.0,
+     "pss_mb": 35.1
+    },
+    "gpu-process": {
+     "cpu_pct": 977.8,
+     "pss_mb": 718.6
+    },
+    "utility": {
+     "cpu_pct": 0.1,
+     "pss_mb": 50.0
+    },
+    "renderer": {
+     "cpu_pct": 7.0,
+     "pss_mb": 292.9
+    },
+    "TOTAL": {
+     "cpu_pct": 985.0,
+     "pss_mb": 1233.6
+    }
+   },
+   "pagina": {
+    "fps_real": 21,
+    "fps_objetivo": 30,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 8,
+    "triangulos": 78028,
+    "geometrias": 124,
+    "texturas": 10,
+    "construcciones": 1,
+    "personas": 0,
+    "liberado": null,
+    "cuadros_dibujados_por_s": null
+   },
+   "errores": []
+  },
+  {
+   "agentes": 12,
+   "query": "?calidad=baja&dpr=1&ahorro=0",
+   "ventana": "200,120",
+   "escala": 1,
+   "procesos": {
+    "browser": {
+     "cpu_pct": 0.4,
+     "pss_mb": 137.5
+    },
+    "zygote": {
+     "cpu_pct": 0.0,
+     "pss_mb": 34.5
+    },
+    "gpu-process": {
+     "cpu_pct": 880.6,
+     "pss_mb": 719.8
+    },
+    "utility": {
+     "cpu_pct": 0.1,
+     "pss_mb": 50.1
+    },
+    "renderer": {
+     "cpu_pct": 6.7,
+     "pss_mb": 306.5
+    },
+    "TOTAL": {
+     "cpu_pct": 887.7,
+     "pss_mb": 1248.2
+    }
+   },
+   "pagina": {
+    "fps_real": 18,
+    "fps_objetivo": 30,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 93,
+    "triangulos": 146164,
+    "geometrias": 124,
+    "texturas": 10,
+    "construcciones": 1,
+    "personas": 12,
+    "liberado": null,
+    "cuadros_dibujados_por_s": null
+   },
+   "errores": []
+  },
+  {
+   "agentes": 12,
+   "query": "?calidad=baja&dpr=1",
+   "ventana": "200,120",
+   "escala": 1,
+   "procesos": {
+    "browser": {
+     "cpu_pct": 0.4,
+     "pss_mb": 135.4
+    },
+    "zygote": {
+     "cpu_pct": 0.0,
+     "pss_mb": 36.3
+    },
+    "gpu-process": {
+     "cpu_pct": 875.6,
+     "pss_mb": 729.2
+    },
+    "utility": {
+     "cpu_pct": 0.1,
+     "pss_mb": 52.2
+    },
+    "renderer": {
+     "cpu_pct": 6.3,
+     "pss_mb": 305.4
+    },
+    "TOTAL": {
+     "cpu_pct": 882.3,
+     "pss_mb": 1258.5
+    }
+   },
+   "pagina": {
+    "fps_real": 16,
+    "fps_objetivo": 30,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 93,
+    "triangulos": 146164,
+    "geometrias": 124,
+    "texturas": 10,
+    "construcciones": 1,
+    "personas": 12,
+    "liberado": null,
+    "cuadros_dibujados_por_s": null
+   },
+   "errores": []
+  },
+  {
+   "agentes": 12,
+   "query": "",
+   "ventana": "1600,1000",
+   "escala": 2,
+   "procesos": {
+    "browser": {
+     "cpu_pct": 1.8,
+     "pss_mb": 44.3
+    },
+    "zygote": {
+     "cpu_pct": 0.0,
+     "pss_mb": 6.7
+    },
+    "gpu-process": {
+     "cpu_pct": 700.8,
+     "pss_mb": 1793.2
+    },
+    "utility": {
+     "cpu_pct": 0.4,
+     "pss_mb": 19.3
+    },
+    "renderer": {
+     "cpu_pct": 2.4,
+     "pss_mb": 85.7
+    },
+    "TOTAL": {
+     "cpu_pct": 705.3,
+     "pss_mb": 1949.2
+    }
+   },
+   "pagina": {
+    "fps_real": 0,
+    "fps_objetivo": 30,
+    "calidad": "media",
+    "dpr": 2,
+    "llamadas": 1,
+    "triangulos": 1,
+    "geometrias": 328,
+    "texturas": 125,
+    "construcciones": 1,
+    "personas": 12,
+    "liberado": null,
+    "cuadros_dibujados_por_s": null
+   },
+   "errores": []
+  }
+ ],
+ "rebuild": {
+  "filas": [
+   {
+    "fps_real": 1,
+    "fps_objetivo": 30,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 328,
+    "triangulos": 460120,
+    "geometrias": 315,
+    "texturas": 107,
+    "construcciones": 1,
+    "personas": 12,
+    "liberado": null
+   },
+   {
+    "fps_real": 2,
+    "fps_objetivo": 60,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 331,
+    "triangulos": 467198,
+    "geometrias": 619,
+    "texturas": 212,
+    "construcciones": 2,
+    "personas": 13,
+    "liberado": null
+   },
+   {
+    "fps_real": 0,
+    "fps_objetivo": 60,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 333,
+    "triangulos": 473784,
+    "geometrias": 924,
+    "texturas": 317,
+    "construcciones": 3,
+    "personas": 14,
+    "liberado": null
+   },
+   {
+    "fps_real": 0,
+    "fps_objetivo": 60,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 336,
+    "triangulos": 481268,
+    "geometrias": 1231,
+    "texturas": 423,
+    "construcciones": 4,
+    "personas": 15,
+    "liberado": null
+   },
+   {
+    "fps_real": 0,
+    "fps_objetivo": 60,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 339,
+    "triangulos": 489640,
+    "geometrias": 1540,
+    "texturas": 530,
+    "construcciones": 5,
+    "personas": 16,
+    "liberado": null
+   },
+   {
+    "fps_real": 0,
+    "fps_objetivo": 60,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 342,
+    "triangulos": 497976,
+    "geometrias": 1851,
+    "texturas": 638,
+    "construcciones": 6,
+    "personas": 17,
+    "liberado": null
+   },
+   {
+    "fps_real": 1,
+    "fps_objetivo": 60,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 344,
+    "triangulos": 504562,
+    "geometrias": 2163,
+    "texturas": 746,
+    "construcciones": 7,
+    "personas": 18,
+    "liberado": null
+   }
+  ],
+  "pagina_nueva_mismo_plano": {
+   "fps_real": 0,
+   "fps_objetivo": 30,
+   "calidad": "baja",
+   "dpr": 1,
+   "llamadas": 343,
+   "triangulos": 504166,
+   "geometrias": 324,
+   "texturas": 110,
+   "construcciones": 1,
+   "personas": 18,
+   "liberado": null
+  },
+  "errores": [],
+  "construcciones": 6,
+  "geometrias_de_mas": 1839,
+  "texturas_de_mas": 636,
+  "crecimiento_con_6_cambios_de_tema": {
+   "geometrias": 3,
+   "texturas": 6
+  }
+ },
+ "problemas": [
+  "rebuilt page holds 1839 geometries and 636 textures more than a fresh page",
+  "day/night switches accumulate resources: {'geometrias': 3, 'texturas': 6}"
+ ]
+}

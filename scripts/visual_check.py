@@ -123,13 +123,28 @@ async def chat_scroll_checks(c: CDP, url: str, admin: str, channel: str) -> dict
     a floating button with the count of new messages; clicking it jumps down and resumes following."""
     sc = "document.querySelector('section.feed')"
     at_bottom = f"({sc}.scrollHeight - {sc}.scrollTop - {sc}.clientHeight < 48)"
+    # wait for the initial page of the feed: loading a view puts the reader at the end, by design
+    for _ in range(60):
+        if await c.js("document.querySelectorAll('#feed li').length > 0"):
+            break
+        await asyncio.sleep(0.5)
+    await asyncio.sleep(1)
     r: dict = {"starts_at_bottom": await c.js(at_bottom)}
+    # The office may have other traffic: judge by what the reader sees, not by exact positions.
+    top_seen = (
+        f"(() => {{ const s = {sc}.getBoundingClientRect(); const li = [...document.querySelectorAll('#feed li')]"
+        ".find(x => x.getBoundingClientRect().bottom > s.top + 1); return li ? [li.id, Math.round(li.getBoundingClientRect().top)] : null; })()"
+    )
     await c.js(f"{sc}.scrollTop = 0; 1")
     await asyncio.sleep(0.5)
+    before = await c.js(top_seen)
     for i in range(2):
         _post(url, admin, channel, f"scroll test {i}")
     await asyncio.sleep(3)
-    r["view_kept_while_reading_history"] = await c.js(f"{sc}.scrollTop < 50")
+    after = await c.js(top_seen)
+    r["view_kept_while_reading_history"] = bool(
+        before and after and before[0] == after[0] and abs(before[1] - after[1]) < 4
+    )
     r["button_text"] = await c.js("(b => b.hidden ? null : b.textContent)(document.getElementById('to-bottom'))")
     await c.js("document.getElementById('to-bottom').click(); 1")
     await asyncio.sleep(0.5)
@@ -137,9 +152,10 @@ async def chat_scroll_checks(c: CDP, url: str, admin: str, channel: str) -> dict
     _post(url, admin, channel, "scroll test after resume")
     await asyncio.sleep(3)
     r["follows_again"] = await c.js(f"{at_bottom} && document.getElementById('to-bottom').hidden")
-    r["last_visible_is_newest"] = await c.js(
-        "(() => { const li = document.querySelector('#feed li:last-child .body');"
-        " return !!li && li.textContent.includes('after resume'); })()"
+    r["last_visible_is_newest"] = await c.js(  # our message is not left below the view (later traffic may follow)
+        f"(() => {{ const s = {sc}.getBoundingClientRect(); const li = [...document.querySelectorAll('#feed li')]"
+        ".find(x => x.querySelector('.body')?.textContent.includes('after resume'));"
+        " if (!li) return false; return li.getBoundingClientRect().top < s.bottom; })()"  # shown or already scrolled past
     )
     r["ok"] = bool(r["view_kept_while_reading_history"] and r["button_text"] and _first_int(r["button_text"]) >= 2
                    and r["button_jumps_to_bottom"] and r["follows_again"] and r["last_visible_is_newest"])  # fmt: skip

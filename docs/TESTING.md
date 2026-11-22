@@ -25,6 +25,13 @@
 - **Synthetic agents** — `scripts/synthetic_office.py` (5 owners, 8 agents, sub-agents) drives the *real* API for
   dashboards and manual checks. Testing only; refuses `AGENTLINK_MODE=production`; sessions are labelled
   `synthetic`.
+- **3D rendering** — `scripts/render_check.py` (`make render`, Linux, needs Chromium): starts its own temporary
+  server, then (1) CPU% and memory of every Chromium process with the adaptive loop vs `?ahorro=0` at the same
+  quality, and with default settings on an emulated 2x screen; (2) sessions appear one by one (a rebuild each) and the
+  page must hold no more geometries/textures than a fresh page on the same layout, and six day/night switches must not
+  add any; (3) the frame-rate tiers (camera drag 60, event 30, ambient 8, nothing for 60 s 2). `--repo <checkout>`
+  runs the same procedure against another commit. WebGL is software (SwiftShader) here: it draws ~1 frame/s at
+  1600×1000, below any target, so the loop comparison uses a tiny window where the requested rate is reachable.
 - **Real runtimes** — `scripts/e2e_runtimes.py`, opt-in (`RUN_REAL_RUNTIMES=1`), writes
   `docs/evidence/runtime-e2e-<utc>.json` with every step and the runtime versions. OpenCode should be run with a
   model the account can use (`AGENTLINK_OPENCODE_MODEL`, e.g. `opencode-go/deepseek-v4.1-flash`).
@@ -53,6 +60,7 @@
 | 18 | Project isolation | `test_project_isolation`, `test_ws_filters_unauthorized_projects`, `test_monitor_scoped_to_project` |
 | — | External review 2026-11-21 (findings 1–8, 12–16, 20, 22) | `tests/test_review_fixes.py`: 15 behavioural tests, each verified to fail on `fbe3e7b` (before the fixes) and pass after. Findings 9–11, 17, 19 only apply to Postgres/multi-instance (unsupported); 21 (inbox starts from the oldest mention) is the intended contract |
 | — | Second external review 2026-11-22 (findings 5, 6, 9, 10, 11) | `tests/test_review_fixes.py` (6 more tests, verified to fail on `f9b3922`); restore safety in `deployment/verify.sh`; anonymous view and `/chat` scroll behaviour in `visual_check.py`. Findings 1–4, 7, 8 and the server half of 10 are PostgreSQL/multi-instance only |
+| — | Rendering audit 2026-11-22 (continuous redraw, duplicated textures, resources not freed on rebuild, DPR, shadow map) | `scripts/render_check.py`: run on `main` (392f361) it reports 1839 geometries / 636 textures leaked after 6 rebuilds and textures added by theme switches; on this branch 1 / 1 and 0 |
 | — | Phase 8 integral scenario | `test_five_participants_full_lifecycle` (5 independent clients over real HTTP) |
 
 ## Credentials

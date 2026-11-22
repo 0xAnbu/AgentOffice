@@ -1,6 +1,7 @@
 // LAS TEXTURAS: el piso de cada sala, el tablero de la ciudad, el cielo, las pantallas, los tableros y el logo, todo pintado
 // aquí en lienzos, sin bajar una sola imagen. Así no hay nada que se vea borroso de cerca y la página no pesa.
 import * as THREE from './vendor/three.module.min.js';
+import { registrar, fijar } from './recursos.js';
 
 // Los colores de la marca. Los cuatro primeros hacen el degradado (de oscuro a claro: vino, rojo, naranja, amarillo) que sale
 // en la franja de la torre, el muro del comedor, el logo de los ascensores, los cojines y la escultura; se cambian en
@@ -27,7 +28,7 @@ export function textura(c, { repetir = false, color = true, mip = true } = {}) {
   t.anisotropy = ANISO;
   if (repetir) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   if (!mip) { t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; }
-  return t;
+  return registrar(t);  // owned by the build in progress (see recursos.js)
 }
 
 function azar(s) { let x = s >>> 0 || 1; return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; }
@@ -227,6 +228,10 @@ export function cielo(noche) {
 }
 
 // ============================================================================================ la luz suave (halos y charcos de luz)
+let haloComun = null, sombraComun = null;
+/** The halo and contact shadow are the same on every floor: one shared copy (never freed). */
+export const haloCompartido = () => (haloComun ??= fijar(halo()));
+export const sombraCompartida = () => (sombraComun ??= fijar(sombraSuave()));
 export function halo() {
   const N = 256, [c, ctx] = lienzo(N, N);
   const g = ctx.createRadialGradient(N / 2, N / 2, 0, N / 2, N / 2, N / 2);

@@ -24,8 +24,23 @@ make dev            # http://127.0.0.1:8080 with auto-reload; first run creates 
 
 No build step: plain ES modules served by the backend (`agentlink/static/office/`, `agentlink/static/chat/`), three.js
 vendored. Edit and reload. Useful URL parameters: `?tema=dia|noche`, `?planta=<floor key>`, `?calidad=alta|media|baja`,
-`?dpr=1`. In the console, `oficina3d.resumen()` returns the scene state (floors, sessions, who is walking/in the
-elevator, builds).
+`?dpr=<n>` (automatic: the screen's ratio capped at 1.5), `?sombras=4096` (default 2048²), `?ahorro=0` (fixed 30 fps
+instead of the adaptive rate). In the console, `oficina3d.resumen()` returns the scene state (floors, sessions, who is
+walking/in the elevator, builds) and `oficinaMedida` the frame figures (`fps` = rate asked for now, `real`, `cuadros`,
+`llamadas`/`triangulos` of the whole frame, `liberado` = what the last rebuild freed).
+
+### Rendering cost
+
+- **Adaptive frame rate.** Drawing is the cost (the JS per frame is ~0.1–1.5 ms). The loop asks for 60 fps while the
+  camera moves, 30 while someone walks / rides the elevator / something flies or right after an event, 15 while
+  someone works at a desk, 8 with only ambient motion (traffic, screens) and 2 after 60 s with nothing at all; 0 in a
+  hidden tab. Any input, event, changed snapshot, theme change or resize wakes it on the next display frame. The world
+  advances with real elapsed time (people in steps of ≤ 0.1 s), so traffic keeps its speed at low rates. The automatic
+  quality downgrade only judges seconds that asked for ≥ 15 fps.
+- **GPU resources have an owner** (`static/office/recursos.js`). A rebuild (a desk appears/disappears) frees the
+  previous building's geometries, materials, instance buffers and textures; shared resources (floor textures, cached
+  geometries, contact shadow, halo, sky and environment per theme) are created once and never freed.
+- `make render` (`scripts/render_check.py`) measures all of this; see TESTING.md.
 
 To see a busy office without real agents (testing only):
 

@@ -14,6 +14,7 @@ import * as TX from './texturas.js';
 import { crearPost } from './post.js';
 import { conectar, aEdificio, sesionDeAgente, token, clasificar } from './datos.js';
 import { crearActividad } from './actividad.js';
+import { recolectar, liberar, fijar } from './recursos.js';
 
 const $ = (s) => document.querySelector(s);
 const oficinaEl = $('.oficina');
@@ -74,6 +75,7 @@ renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;
+renderer.info.autoReset = false;  // reset once per frame in bucle(), so the counters cover every pass
 const escena = new THREE.Scene();
 const camara = new THREE.PerspectiveCamera(30, 1, 0.4, 1800);
 const controles = new OrbitControls(camara, lienzo);
@@ -94,7 +96,10 @@ if (params.has('vitrina')) { controles.autoRotate = true; controles.autoRotateSp
 const hemi = new THREE.HemisphereLight('#D6E7F6', '#B3A797', 1.1);
 const sol = new THREE.DirectionalLight('#FFF2DE', 2.6);
 sol.castShadow = true;
-sol.shadow.mapSize.set(4096, 4096);
+// The shadow map is drawn only when the building or the theme changes (autoUpdate is off), so its size costs memory
+// (4096² ≈ 64 MB, 2048² ≈ 16 MB), not frame time. `?sombras=4096` restores the sharper one.
+const LADO_SOMBRA = Number(params.get('sombras')) === 4096 ? 4096 : 2048;
+sol.shadow.mapSize.set(LADO_SOMBRA, LADO_SOMBRA);
 sol.shadow.bias = -0.00035;
 sol.shadow.normalBias = 0.025;
 sol.shadow.radius = 3;
@@ -119,9 +124,14 @@ function entorno(noche) {
   e.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
   if (!noche) { const s = new THREE.Mesh(new THREE.SphereGeometry(4, 16, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 8.4, 7.6) })); s.position.set(-22, 32, 26); e.add(s); }
   const rt = pmrem.fromScene(e, 0.03);
-  geo.dispose();
+  e.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
   return rt.texture;
 }
+// One environment map and one sky per theme, made on first use and kept: ponerTema runs on every rebuild, and
+// regenerating them each time left one render target behind per rebuild.
+const entornos = {}, cielos = {};
+const entornoDe = (noche) => (entornos[noche] ??= fijar(entorno(noche)));
+const cieloDe = (noche) => (cielos[noche] ??= fijar(TX.cielo(noche)));
 
 
 // ============================================================================================ el estado
@@ -246,11 +256,13 @@ const estaEnCasa = () => {
   const v = vistaActual();
   return v.objetivo.distanceTo(casa.objetivo) < 1.2 && Math.abs(v.d / casa.d - 1) < 0.06 && Math.abs(angulo(v.az - casa.az)) < 0.06 && Math.abs(v.polar - casa.polar) < 0.05;
 };
-controles.addEventListener('change', () => { movidaEn = performance.now(); });
+controles.addEventListener('change', () => { movidaEn = performance.now(); despertar(); });
 
 
 function encuadrar() {
-  const dpr = Number(params.get('dpr')) || Math.min(window.devicePixelRatio || 1, 2);
+  // Auto pixel ratio capped at 1.5: on a 2x screen, 2 meant 4x the pixels of 1x (measured: +470 MB and 2.6x the
+  // frame time vs 1). `?dpr=2` still forces it.
+  const dpr = Number(params.get('dpr')) || Math.min(window.devicePixelRatio || 1, 1.5);
   renderer.setPixelRatio(dpr);
   renderer.setSize(innerWidth, innerHeight, false);
   post.tamano();
@@ -267,17 +279,15 @@ window.addEventListener('resize', () => { clearTimeout(esperaEncuadre); esperaEn
 
 // ============================================================================================ día y noche
 function ponerTema(nuevo, guardar) {
+  despertar();
   tema = nuevo;
   const noche = tema === 'noche';
   document.documentElement.dataset.tema = tema;
   for (const b of document.querySelectorAll('.tema button')) b.setAttribute('aria-checked', String(b.dataset.tema === tema));
   if (guardar) { try { localStorage.setItem('oficina.tema', tema); } catch { /* sin almacenamiento */ } }
-  const viejo = escena.environment;
-  escena.environment = entorno(noche);
-  viejo?.dispose?.();
+  escena.environment = entornoDe(noche);
   escena.environmentIntensity = noche ? 0.32 : 0.75;
-  if (escena.background?.dispose) escena.background.dispose();
-  escena.background = TX.cielo(noche);
+  escena.background = cieloDe(noche);
   escena.fog = new THREE.FogExp2(noche ? '#1D1220' : '#E9EDF0', noche ? 0.0024 : 0.0019);
   hemi.color.set(noche ? '#4A5878' : '#D6E7F6');
   hemi.groundColor.set(noche ? '#2A1E18' : '#B3A797');
@@ -499,6 +509,7 @@ function marcar(slug, clase, segundos) { if (slug) marcas.set(slug, { clase, has
 
 /** Real events -> animations (§8.5). Replayed history is listed in the Activity Center but not animated. */
 function alEvento(e) {
+  despertar();
   if (!datos || !pisos.length) return;
   const de = sesionDe(e);
   if (e.type === 'message.created') {
@@ -748,10 +759,14 @@ let logoSvg = '', isotipoSvg = '';
 const letrerosPiso = new Map();
 function personaDe(slug) { const k = gente.get(slug)?.piso ?? pisoDe.get(slug); return k === undefined ? null : pisos[k]?.tropa.porSlug.get(slug); }
 
+let huellaEstados = '';
 function alSnapshot(snap) {
   document.documentElement.classList.remove('sin-sesion');  // first authenticated data: show the controls
   const edificio = aEdificio(snap);
   datos = edificio;
+  // The periodic refresh (every 15 s) must not keep an idle building awake: wake only if something visible changed.
+  const huella = JSON.stringify([...edificio.sesiones].map(([id, s]) => [id, s.estado, s.bandeja, s.coordinador, s.sub]));
+  if (huella !== huellaEstados) { huellaEstados = huella; despertar(); }
   // Rebuild the static building only when its layout (floors, rooms, desks) changes — never on heartbeats (§8.4).
   const f = JSON.stringify(edificio.pisos.map((p) => [p.key, p.zonas.map((z) => [z.clave, z.puestos])]));
   const listo = f === firma ? Promise.resolve() : (firma = f, construir(edificio, snap));
@@ -775,6 +790,7 @@ function construir(edificio, snap) {
   return construyendo;
 }
 let construcciones = 0;
+let texturasDeLaObra = new Set();  // textures created by the current build (freed by the next one)
 async function construirYa(edificio, snap) {
   construcciones++;
   if (!logoSvg) {
@@ -784,37 +800,45 @@ async function construirYa(edificio, snap) {
     document.title = titulo; $('.cabeza h1').textContent = titulo;
     [logoSvg, isotipoSvg] = await Promise.all(['/office/marca/logo.svg', '/office/marca/isotipo.svg'].map((u) => fetch(u).then((r) => r.text())));
   }
-  for (const P2 of pisos) escena.remove(P2.mundo.grupo);
-  for (const o of [...escena.children]) if (o !== hemi && o !== sol && o !== sol.target) escena.remove(o);
-  // Floors bottom-up: the config lists the top floor first.
-  const orden = [...edificio.pisos].reverse();
-  pisoDe.clear();
-  const minimo = Math.max(...orden.map((p) => distribuir(p.zonas, p.puestos).interior));
-  pisos = [];
-  for (let k = 0; k < orden.length; k++) {
-    const def = orden[k];
-    const plano = distribuir(def.zonas, def.puestos, minimo);
-    const mundo = await crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg, datos: { zonas: def.zonas, puestos: def.puestos }, y: k * PLANTA, conCiudad: k === 0 });
-    const quienes = Object.keys(plano.puestos).map((slug) => ({ slug, camisa: def.puestos[slug]?.paleta?.[0] || '#8E8E93', largo: def.puestos[slug]?.genero === 'f' }));
-    const tropa = crearPersonas(mundo.grupo, quienes, TX.sombraSuave(), TX.halo());
-    // A stacked floor would cast its slab's shadow over the whole floor below (one sun for the building): only the
-    // ground floor casts shadows, so every floor stays readable from the side.
-    if (k > 0) mundo.grupo.traverse((o) => { o.castShadow = false; });
-    for (const slug of Object.keys(plano.puestos)) pisoDe.set(slug, k);
-    pisos.push({ key: def.key, nombre: def.nombre, y: k * PLANTA, plano, mundo, tropa });
+  // Replace the previous building and free what it owned on the GPU (scene.remove alone frees nothing).
+  const viejos = [...new Set([...pisos.map((P2) => P2.mundo.grupo), ...escena.children.filter((o) => o !== hemi && o !== sol && o !== sol.target)])];
+  for (const o of viejos) escena.remove(o);
+  medida.liberado = liberar(viejos, texturasDeLaObra, new Set([escena.background, escena.environment]));
+  texturasDeLaObra = new Set();
+  const antes = recolectar(texturasDeLaObra);
+  try {
+    // Floors bottom-up: the config lists the top floor first.
+    const orden = [...edificio.pisos].reverse();
+    pisoDe.clear();
+    const minimo = Math.max(...orden.map((p) => distribuir(p.zonas, p.puestos).interior));
+    pisos = [];
+    for (let k = 0; k < orden.length; k++) {
+      const def = orden[k];
+      const plano = distribuir(def.zonas, def.puestos, minimo);
+      const mundo = await crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg, datos: { zonas: def.zonas, puestos: def.puestos }, y: k * PLANTA, conCiudad: k === 0 });
+      const quienes = Object.keys(plano.puestos).map((slug) => ({ slug, camisa: def.puestos[slug]?.paleta?.[0] || '#8E8E93', largo: def.puestos[slug]?.genero === 'f' }));
+      const tropa = crearPersonas(mundo.grupo, quienes, TX.sombraCompartida(), TX.haloCompartido());
+      // A stacked floor would cast its slab's shadow over the whole floor below (one sun for the building): only the
+      // ground floor casts shadows, so every floor stays readable from the side.
+      if (k > 0) mundo.grupo.traverse((o) => { o.castShadow = false; });
+      for (const slug of Object.keys(plano.puestos)) pisoDe.set(slug, k);
+      pisos.push({ key: def.key, nombre: def.nombre, y: k * PLANTA, plano, mundo, tropa });
+    }
+    // floor labels (DOM) and floor buttons
+    for (const el of letrerosPiso.values()) el.remove();
+    letrerosPiso.clear();
+    pisos.forEach((P2, k) => {
+      const el = document.createElement('div');
+      el.className = 'letrero-piso';
+      el.textContent = `P${k + 1} · ${P2.nombre}`;
+      capaRotulos.append(el);
+      letrerosPiso.set(k, el);
+    });
+    pintarPlantas();
+    crearBandejasYVuelos();
+  } finally {
+    recolectar(antes);
   }
-  // floor labels (DOM) and floor buttons
-  for (const el of letrerosPiso.values()) el.remove();
-  letrerosPiso.clear();
-  pisos.forEach((P2, k) => {
-    const el = document.createElement('div');
-    el.className = 'letrero-piso';
-    el.textContent = `P${k + 1} · ${P2.nombre}`;
-    capaRotulos.append(el);
-    letrerosPiso.set(k, el);
-  });
-  pintarPlantas();
-  crearBandejasYVuelos();
   sol.target.position.set(0, 0, 0);
   const lado = Math.max(pisos[0].plano.WT, D) / 2 + 8 + pisos.length * 2;
   Object.assign(sol.shadow.camera, { left: -lado, right: lado, top: lado, bottom: -lado, near: 10, far: 220 });
@@ -861,23 +885,62 @@ window.oficina3d = {
   cortarConexion() { conexion?.soltar(); },
   irAPiso(k) { volarA(vistaDePiso(k), 1); }, irACasa() { if (casa) volarA(casa, 1); }, irAPuesto(slug) { volarA(vistaDePuesto(slug), 1); },
 };
+// Adaptive frame rate. Drawing is what costs (the JS per frame is ~0.1 ms): a still building used to be redrawn
+// 30 times a second even with nobody in it. Now the rate follows what is on screen:
+//   camera moving 60 · someone walking / in the elevator / something flying / a recent event 30 ·
+//   someone working at a desk 15 · ambient only (traffic, screens) 8 · nothing at all for 60 s 2 · hidden tab 0.
+// Any input, event, snapshot, theme change or resize wakes it up on the next display frame. `?ahorro=0` restores
+// the previous fixed 30 fps.
+const AHORRO = params.get('ahorro') !== '0';
+let despiertoEn = performance.now();
+function despertar() { despiertoEn = performance.now(); }
+function hayMovimiento() {
+  if (vuelos.length || cabinas.size) return true;
+  for (const g of gente.values()) if (g.visible && g.modo !== 'quieto' && g.modo !== 'fuera') return true;
+  for (const g of gente.values()) if (g.recados?.length) return true;
+  return false;
+}
+function hayTrabajo() {
+  for (const g of gente.values()) if (g.visible && P(g.slug)?.estado === 'trabajando') return true;
+  return false;
+}
+function objetivo(ahora, moviendo) {
+  if (moviendo) return 60;
+  const tope = reducido.matches ? 15 : 30;
+  if (!AHORRO) return tope;
+  if (hayMovimiento()) { despiertoEn = ahora; return tope; }
+  if (ahora - despiertoEn < 1500) return tope;  // let pulses, drops and doors finish smoothly
+  if (hayTrabajo()) return Math.min(tope, 15);
+  return ahora - despiertoEn < 60000 ? 8 : 2;
+}
+let objetivoSeg = Infinity;  // lowest rate asked for during the current second (for the slowness check)
 function bucle(ahora) {
   cuadro = requestAnimationFrame(bucle);
   avanzarVuelo(ahora);
   const moviendo = !!vuelo || ahora - movidaEn < 300;
-  const fps = moviendo ? 60 : reducido.matches ? 15 : 30;
+  const fps = objetivo(ahora, moviendo);
+  medida.fps = fps;  // the rate asked for right now (read by checks even between drawn frames)
   if (ahora - ultimo < 1000 / fps - 1.5) return;
-  const dt = ultimo ? Math.min(0.1, (ahora - ultimo) / 1000) : 0;
+  // Real elapsed time (up to 1 s) drives the world, so traffic and walks keep their speed at low rates; people are
+  // simulated in steps of at most 0.1 s so a long frame cannot make them skip a corner of their route.
+  const paso = ultimo ? Math.min(1, (ahora - ultimo) / 1000) : 0;
+  const dt = Math.min(0.1, paso);
   ultimo = ahora;
   if (!pisos.length || !datos) return;
+  objetivoSeg = Math.min(objetivoSeg, fps);
   const t0 = performance.now();
-  reloj += dt;
   if (!vuelo) controles.update(dt);
   const tg = controles.target;
   const lim = 240, techo = pisos.length * PLANTA + 12;
   if (Math.abs(tg.x) > lim || Math.abs(tg.z) > lim || tg.y < -78 || tg.y > techo) tg.set(clamp(tg.x, -lim, lim), clamp(tg.y, -78, techo), clamp(tg.z, -lim, lim));
-  for (const g of gente.values()) if (g.modo === 'ascensor') enAscensor(g, reloj);
-  simular(reloj, dt);
+  let resto = paso;
+  do {
+    const d = Math.min(0.1, resto);
+    resto -= d;
+    reloj += d;
+    for (const g of gente.values()) if (g.modo === 'ascensor') enAscensor(g, reloj);
+    simular(reloj, d);
+  } while (resto > 1e-6);
   const poses = pisos.map(() => new Map());
   for (const g of gente.values()) {
     if (!g.visible) continue;
@@ -887,10 +950,11 @@ function bucle(ahora) {
     poses[g.piso]?.set(g.slug, { visible: true, x: g.x, y: g.y, rumbo: g.rumbo, ...g.pose, s: g.s, esfera: brillo + pulso, pulso, esferaSube: s.estado === 'espera' ? 0.12 : 0 });
   }
   const t1 = performance.now();
-  pisos.forEach((P2, k) => { P2.tropa.actualizar(reloj, poses[k]); P2.mundo.actualizar(reloj, reducido.matches ? 0 : dt, camara); });
+  pisos.forEach((P2, k) => { P2.tropa.actualizar(reloj, poses[k]); P2.mundo.actualizar(reloj, reducido.matches ? 0 : paso, camara); });
   actualizarBandejas(reloj);
   const t2 = performance.now();
   post.enfocar(camara.position.distanceTo(controles.target));
+  renderer.info.reset();  // autoReset is off: count every pass of the frame, not only the last full-screen one
   post.dibujar(dt);
   const t3 = performance.now();
   ubicarRotulos();
@@ -904,9 +968,12 @@ function bucle(ahora) {
   if (ahora - segundoEn >= 1000) {
     medida.real = Math.round(cuadrosSeg * 1000 / (ahora - segundoEn));
     cuadrosSeg = 0; segundoEn = ahora;
-    const pedidos = moviendo ? 50 : fps;
+    // Only judge slowness over a second that asked for a real animation rate the whole time: at the low idle
+    // rates (or while switching rates) a low count means "nothing to draw", not "too slow".
+    const pedidos = moviendo ? 50 : objetivoSeg;
+    objetivoSeg = Infinity;
     const calentando = performance.now() - construidoEn < 8000;
-    lentos = !calentando && medida.real < pedidos * 0.72 && !document.hidden ? lentos + 1 : 0;
+    lentos = !calentando && pedidos >= 15 && medida.real < pedidos * 0.72 && !document.hidden ? lentos + 1 : 0;
     if (lentos >= 3 && !calidadPedida && post.nivel !== 'baja') {
       post.armar(post.nivel === 'alta' ? 'media' : 'baja');
       post.ponerNoche(tema === 'noche');
@@ -922,7 +989,7 @@ function bucle(ahora) {
     }
     medida.calidad = post.nivel;
   }
-  medida.fps = fps;
+  medida.cuadros = (medida.cuadros || 0) + 1;
   medida.llamadas = renderer.info.render.calls;
   medida.triangulos = renderer.info.render.triangles;
 }
@@ -987,6 +1054,7 @@ lienzo.addEventListener('pointermove', (ev) => {
   const ahora = performance.now();
   if (ahora - ultimoSobre < 60 || !pisos.length) return;
   ultimoSobre = ahora;
+  despertar();
   const slug = personaBajo(ev.clientX, ev.clientY);
   if (slug !== encima) {
     if (encima) rotulos.get(encima)?.classList.remove('encima');
