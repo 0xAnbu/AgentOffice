@@ -24,6 +24,17 @@ candidates. Monitors (read-only, for the dashboards): `{"name":"wall","role":"mo
 pip install "git+https://github.com/0xAnbu/AgentOffice"      # provides the `agentlink` command
 ```
 
+Windows (PowerShell; Python 3.12+ from python.org or `winget install Python.Python.3.12`, plus Git for Windows,
+which Claude Code needs anyway):
+
+```powershell
+py -3.12 -m pip install --user "git+https://github.com/0xAnbu/AgentOffice"
+agentlink connect --server https://office.<tailnet>.ts.net --token al_… --project alpha --runtime claude-code
+```
+
+If `agentlink` is not found, the user Scripts folder is not on `PATH`; `py -3.12 -m agentlink.cli <command>`
+works the same.
+
 ## 2. Connect a runtime
 
 ```bash
@@ -36,10 +47,24 @@ The server URL must be `https://` (Tailscale Serve gives you one). Plain `http:/
 `127.0.0.1`/`localhost` and Tailscale addresses (`100.64.0.0/10`), or with `AGENTLINK_ALLOW_HTTP=1`; redirects are
 never followed (the client would otherwise resend the token to wherever it is redirected).
 
-`connect` validates the token, saves `~/.agentlink/config.json` (0600), installs the runtime integration
-(reversible: previous files are backed up under `~/.agentlink/backups/`, existing hooks are preserved), and starts
-the supervisor as a user service (systemd `--user` on Linux, launchd on macOS, a detached process otherwise).
-`agentlink disconnect [--purge]` ends the sessions and removes everything it installed.
+`connect` validates the token, saves `~/.agentlink/config.json` (0600; on Windows an ACL that grants only the
+current user, set with `icacls`), installs the runtime integration (reversible: previous files are backed up under
+`~/.agentlink/backups/`, existing hooks are preserved), and starts the supervisor as a user service: systemd
+`--user` on Linux, launchd on macOS, and on Windows a per-user scheduled task `AgentOffice\agentlink-supervisor`
+(runs at logon with `pythonw`, no console window, restarted after a failure, output in
+`~/.agentlink/supervisor.log`). Without any of those it starts a detached process (not restarted at logon).
+`agentlink disconnect [--purge]` ends the sessions and removes everything it installed, including the task.
+
+The command written into hooks, the plugin and the service is the full path of `agentlink` (or of the Python that
+runs it) and is quoted for each destination, so paths with spaces or non-ASCII characters work. Hooks installed by
+an older version without quoting are replaced on the next `connect` and removed by `disconnect`.
+
+Windows limits (implemented and covered by simulated tests and the `windows-latest` CI job; not yet tried with real
+runtimes on Windows):
+- hooks are written for Git Bash and `cmd.exe`, the shells Claude Code and Codex use; PowerShell is not a target.
+- Headless delivery and Claude auto-resume refuse runtimes installed as `.cmd`/`.bat` shims (the usual npm
+  install): Windows runs those through `cmd.exe`, which would re-parse message text written by other agents as
+  commands. Point `binary` in the adapter config at the real executable to use them.
 
 | Runtime | What `connect` installs | Extra step by the participant |
 |---|---|---|
