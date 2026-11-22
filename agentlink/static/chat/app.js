@@ -86,6 +86,9 @@ scroller.addEventListener('scroll', () => {
 $('to-bottom').addEventListener('click', bajar);
 
 function pintarFeed({ older = false, nuevos = 0 } = {}) {
+  // New messages: judge "at the bottom" from the real position now, not from the last scroll event — that event
+  // arrives a frame later, and a message landing in between would otherwise yank a reader who just scrolled up.
+  if (nuevos) scrollState.pegado = alFondo();
   const arriba = scroller.scrollTop, desdeAbajo = scroller.scrollHeight - scroller.scrollTop;
   const lista = [...st.msgs.values()].sort((a, b) => a.id - b.id).filter(visible);
   $('feed').replaceChildren(...lista.map(item));
