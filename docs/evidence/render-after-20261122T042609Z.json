@@ -1,5 +1,6 @@
 {
  "repo_commit": "392f361",
+  "repo_commit_note": "Measured on the uncommitted working tree later committed unchanged as 0babb20; repo_commit is the parent HEAD at measurement time.",
  "at": "2026-11-22T04:12:25",
  "webgl": "SwiftShader (software)",
  "cpu": [
