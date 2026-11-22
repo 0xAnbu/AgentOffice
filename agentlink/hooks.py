@@ -223,7 +223,7 @@ def handle(
 def main(runtime: str, event: str) -> None:
     """Entry point. Fail open: a broken coordination layer must never break the agent's own work."""
     try:
-        raw = sys.stdin.read()
+        raw = sys.stdin.buffer.read().decode("utf-8", "replace")  # runtimes send UTF-8 JSON (Windows: not the locale)
         payload = json.loads(raw) if raw.strip() else {}
         out = handle(runtime, event, payload)
         if out:
