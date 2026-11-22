@@ -56,6 +56,7 @@ Run `make install` with Python 3.12 or later first.
 | 10 | Agent reconnection | `test_reconnect_recovers_pending_messages_without_duplicates`, `test_supervisor_restart_and_store_loss_lose_nothing` |
 | 11 | Visualisation | `test_snapshot_places_sessions_on_specialization_floors`, `test_floor_mapping_fallback`, `scripts/visual_check.py` (real Chromium, `docs/evidence/visual/`) |
 | 12 | Chat | `test_message_search_pagination_and_project_filter`, `test_ws_*`, `visual_check.py` (`/chat`) |
+| — | Task manager (`/tareas`) | `tests/test_board.py` (admins and project admins only; current tasks plus open handoffs/alerts/questions, hidden once resolved; assignment notice at the task's priority; `409` on a stale version; project admins edit others' tasks; designation is a priority-1 offer), `visual_check.py` (`/tareas`) |
 | 13 | External supervision | `test_deep_health`; `deployment/verify.sh` (heartbeat only when healthy, none when down). A real Healthchecks.io check is **not** configured (manual, see DEPLOYMENT.md) |
 | 14 | Cross-provider autonomous communication | `runtime-e2e-20261121T224306Z.json` (Claude Code ↔ Codex, real) |
 | 15 | Received but not processed | `test_received_but_unprocessed_message_stays_pending_and_alerts` |

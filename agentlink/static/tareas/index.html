@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Agent Office · tareas</title>
+  <link rel="icon" href="/office/marca/isotipo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/tareas/style.css">
+  <script type="module" src="/static/tareas/app.js"></script>
+</head>
+<body>
+  <!-- Task manager for project administrators. Every change goes through the regular API (tasks, messages,
+       coordinator), so the server applies the same rules, events and notifications as for agents. -->
+  <section id="login" class="login" hidden>
+    <form id="login-form">
+      <h1>Agent Office · Tareas</h1>
+      <p>Gestor de tareas para administradores del proyecto.</p>
+      <label for="token">Token de administrador (rol <code>admin</code> global o admin del proyecto)</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="al_…" required>
+      <button type="submit">Entrar</button>
+      <p id="login-error" class="error" role="alert"></p>
+      <p class="hint">El token se guarda solo en esta pestaña (sessionStorage).</p>
+    </form>
+  </section>
+
+  <main id="app" hidden>
+    <header>
+      <strong class="brand">AGENT OFFICE</strong>
+      <nav class="nav" aria-label="Páginas">
+        <a href="/">Edificio 3D</a><a href="/chat">Chat</a><a href="/tareas" aria-current="page">Tareas</a>
+      </nav>
+      <label class="proj">Proyecto <select id="project"></select></label>
+      <div id="coord" class="coord" aria-live="polite"></div>
+      <span id="conn" class="pill">…</span>
+      <span id="whoami" class="muted"></span>
+      <button id="logout" type="button">Salir</button>
+    </header>
+
+    <p id="denied" class="denied" hidden></p>
+
+    <div id="toolbar" class="toolbar">
+      <div class="seg" role="group" aria-label="Agrupar por">
+        <span class="muted">Agrupar por</span>
+        <button type="button" data-group="canal">Canal</button>
+        <button type="button" data-group="estado">Estado</button>
+        <button type="button" data-group="responsable">Responsable</button>
+        <button type="button" data-group="prioridad">Prioridad</button>
+      </div>
+      <div class="seg" role="group" aria-label="Vista">
+        <button type="button" data-view="tablero">Tablero</button>
+        <button type="button" data-view="lista">Lista</button>
+      </div>
+      <select id="f-type" aria-label="Tipo"></select>
+      <select id="f-who" aria-label="Responsable"></select>
+      <select id="f-prio" aria-label="Prioridad"></select>
+      <input id="f-q" type="search" placeholder="Buscar…" aria-label="Buscar">
+      <span id="summary" class="muted summary" aria-live="polite"></span>
+      <button id="new" type="button" class="primary">+ Nuevo</button>
+    </div>
+
+    <div class="work">
+      <section id="board" class="board" aria-label="Tareas actuales"></section>
+      <aside id="panel" class="panel" hidden aria-labelledby="panel-title"></aside>
+    </div>
+  </main>
+
+  <dialog id="composer" aria-labelledby="composer-title">
+    <form id="composer-form" method="dialog">
+      <h2 id="composer-title">Nuevo</h2>
+      <label>Tipo <select id="c-type" required></select></label>
+      <label>Canal <select id="c-channel" required></select></label>
+      <label id="c-title-row">Título <input id="c-title" maxlength="200" autocomplete="off"></label>
+      <label id="c-assignee-row">Asignar a <select id="c-assignee"></select></label>
+      <fieldset id="c-to-row">
+        <legend>Mencionar (reciben el mensaje en su bandeja)</legend>
+        <div id="c-to" class="checks"></div>
+      </fieldset>
+      <label>Prioridad <select id="c-prio"></select></label>
+      <label><span id="c-body-label">Texto</span> <textarea id="c-body" rows="5" maxlength="16000"></textarea></label>
+      <p id="c-hint" class="hint"></p>
+      <p id="c-error" class="error" role="alert"></p>
+      <div class="row">
+        <button type="button" id="c-cancel">Cancelar</button>
+        <button type="submit" id="c-send" class="primary" value="send">Enviar</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

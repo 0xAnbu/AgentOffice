@@ -22,7 +22,7 @@ make dev            # http://127.0.0.1:8080 with auto-reload; first run creates 
 
 ## Frontend
 
-No build step: plain ES modules served by the backend (`agentlink/static/office/`, `agentlink/static/chat/`), three.js
+No build step: plain ES modules served by the backend (`agentlink/static/office/`, `agentlink/static/chat/`, `agentlink/static/tareas/`), three.js
 vendored. Edit and reload. Useful URL parameters: `?tema=dia|noche`, `?planta=<floor key>`, `?calidad=alta|media|baja`,
 `?dpr=<n>` (automatic: the screen's ratio capped at 1.5), `?sombras=4096` (default 2048²), `?ahorro=0` (fixed 30 fps
 instead of the adaptive rate). In the console, `oficina3d.resumen()` returns the scene state (floors, sessions, who is

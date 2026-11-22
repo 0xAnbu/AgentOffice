@@ -3,7 +3,7 @@
     python scripts/visual_check.py --url http://127.0.0.1:8080 --token <monitor token> --out docs/evidence/visual
 
 Logs in (token in sessionStorage, as a human would), waits for live data, records JS errors, reads the scene summary
-exposed by window.oficina3d.resumen(), takes screenshots (building, one floor, a close-up, /chat) and writes a JSON
+exposed by window.oficina3d.resumen(), takes screenshots (building, one floor, a close-up, /chat, /tareas) and writes a JSON
 report. Exit code 1 if the page threw errors or the scene is not built from backend data.
 """
 
@@ -162,6 +162,31 @@ async def chat_scroll_checks(c: CDP, url: str, admin: str, channel: str) -> dict
     return r
 
 
+async def tareas_checks(c: CDP, admin: str, out: Path) -> dict:
+    """/tareas: refused for the monitor token already in the tab, then the admin's board, grouping and side panel."""
+    await asyncio.sleep(3)
+    denied = await c.js("!document.querySelector('#denied').hidden && document.querySelector('#toolbar').hidden")
+    await c.js(f"sessionStorage.setItem('agentoffice_token', {json.dumps(admin)}); location.reload(); 1")
+    await asyncio.sleep(4)
+    r = await c.js(
+        "({cols: document.querySelectorAll('.col').length, cards: document.querySelectorAll('.card').length,"
+        " summary: document.querySelector('#summary').textContent, coord: document.querySelector('#coord').textContent})"
+    )
+    await c.shot(out / "tareas.png")
+    await c.js("document.querySelector('[data-group=estado]').click(); 1")
+    await asyncio.sleep(0.5)
+    r["cols_estado"] = await c.js("document.querySelectorAll('.col').length")
+    await c.js("document.querySelector('[data-group=canal]').click(); document.querySelector('.card')?.click(); 1")
+    await asyncio.sleep(1.5)
+    r["panel"] = await c.js(
+        "!document.querySelector('#panel').hidden && document.querySelector('#panel-title')?.textContent"
+    )
+    await c.shot(out / "tareas-panel.png")
+    r["denied_for_monitor"] = denied
+    r["ok"] = bool(denied and r["cols"] and r["cards"] and r["panel"])
+    return r
+
+
 async def run(url: str, token: str, out: Path, wait: float, admin: str | None = None, channel: str = "demo-dev") -> int:
     out.mkdir(parents=True, exist_ok=True)
     prof = tempfile.mkdtemp(prefix="cdp-")
@@ -226,6 +251,10 @@ async def run(url: str, token: str, out: Path, wait: float, admin: str | None = 
                 "({canvas: !!document.querySelector('canvas'), mensajes: document.querySelectorAll('#feed li').length, title: document.title})"
             )
             await c.shot(out / "chat.png")
+            if admin:
+                await c.call("Page.navigate", url=url + "/tareas")
+                report["tareas"] = await tareas_checks(c, admin, out)
+                print("tareas:", json.dumps(report["tareas"], ensure_ascii=False))
             errs = []
             for e in c.events:
                 if e.get("method") == "Runtime.exceptionThrown":
@@ -265,6 +294,7 @@ async def run(url: str, token: str, out: Path, wait: float, admin: str | None = 
                 and report.get("realtime", {"ok": True})["ok"]
                 and report["anonymous_ok"]
                 and report.get("chat_scroll", {"ok": True})["ok"]
+                and report.get("tareas", {"ok": True})["ok"]
             )
             return 0 if ok else 1
     finally:

@@ -78,6 +78,11 @@ async def chat(_: Request) -> Response:
     return FileResponse(STATIC / "chat" / "index.html")
 
 
+async def tareas(_: Request) -> Response:
+    """Task manager for project administrators (writes go through the regular task/message/coordinator API)."""
+    return FileResponse(STATIC / "tareas" / "index.html")
+
+
 async def _reconcile_loop() -> None:
     """Recovery supervisor: runs inside the single backend, on the same DB and transaction model."""
     from starlette.concurrency import run_in_threadpool
@@ -123,6 +128,7 @@ def create_app() -> Starlette:
             Route("/mcp", mcp_endpoint, methods=["GET", "POST", "DELETE"]),
             Route("/", index),
             Route("/chat", chat),
+            Route("/tareas", tareas),
             Mount("/office", app=StaticFiles(directory=STATIC / "office"), name="office"),
             Mount("/static", app=StaticFiles(directory=STATIC), name="static"),
         ],

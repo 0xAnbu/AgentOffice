@@ -158,7 +158,7 @@ def _notify(tx: Executor, project: Row, target: Row, prompt: str, epoch: int) ->
     sys_message(
         tx, None, ch, f"@{target['agent']} {prompt}",
         {"event": "coordinator.offered", "epoch": epoch, "session_id": target["id"], "priority": 1},
-        [str(target["agent"])],
+        [str(target["agent"])], priority=1,
     )  # fmt: skip
 
 
@@ -203,7 +203,7 @@ def _alert_humans(tx: Executor, project: Row) -> None:
         tx, None, ch,
         f"[Agent Office] Project {project['name']} has no coordinator and no eligible candidate. "
         "Work that does not need a coordinator continues; tasks stay recoverable. Human attention needed.",
-        {"event": "coordinator.unavailable", "priority": 1}, admins or None,
+        {"event": "coordinator.unavailable", "priority": 1}, admins or None, priority=1,
     )  # fmt: skip
 
 
@@ -358,7 +358,8 @@ def assign(db: Database, p: Principal, project: str, payload: dict[str, Any], se
              session_id=str(s["id"]), task_id=task_id,
              data={"assignee": a["name"], "by_coordinator_epoch": c["epoch"], "from": t["status"]})  # fmt: skip
         sys_message(tx, p, ch, f"@{p.name} (coordinator, epoch {c['epoch']}) assigned task #{task_id} to @{a['name']}",
-                    {"task_id": task_id, "event": "assigned", "assignee": a["name"]}, [str(a["name"])])  # fmt: skip
+                    {"task_id": task_id, "event": "assigned", "assignee": a["name"]}, [str(a["name"])],
+                    priority=int(t["priority"]))  # fmt: skip
         out = get_task(tx, p, task_id)
     return out
 

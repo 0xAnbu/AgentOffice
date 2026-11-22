@@ -28,7 +28,7 @@ from typing import Any
 from . import validation as v
 from .config import Settings
 from .db import Database, Executor, Row
-from .directory import agent_by_name, channel_for
+from .directory import agent_by_name, channel_for, project_admin
 from .errors import BadRequest, Conflict, Forbidden, NotFound
 from .events import emit
 from .messages import Notifier, insert_message, iso
@@ -57,11 +57,21 @@ HOLDER_ONLY = ("in_progress", "review", "done", "failed")  # need the lease when
 
 
 def sys_message(
-    tx: Executor, p: Principal | None, ch: Row, body: str, data: dict[str, Any], mentions: list[str] | None = None
+    tx: Executor,
+    p: Principal | None,
+    ch: Row,
+    body: str,
+    data: dict[str, Any],
+    mentions: list[str] | None = None,
+    priority: int = 2,
 ) -> None:
-    """System message inside the caller's transaction. `p=None` => authored by the server (admin identity)."""
+    """System message inside the caller's transaction. `p=None` => authored by the server (admin identity).
+
+    `priority` is the message's own priority (1 interrupts the recipient's runtime, see hooks/supervisor).
+    """
     author = p or _server_principal(tx)
-    insert_message(tx, author, ch, {"kind": "system", "body": body, "data": data, "mentions": mentions}, system=True)
+    payload = {"kind": "system", "body": body, "data": data, "mentions": mentions, "priority": priority}
+    insert_message(tx, author, ch, payload, system=True)
 
 
 def _server_principal(tx: Executor) -> Principal:
@@ -421,7 +431,8 @@ def _update_task_tx(tx: Executor, p: Principal, ch: Row, task_id: int, payload: 
     now = now_ms()
     is_holder = row["assignee_id"] == p.agent_id and row["status"] in ACTIVE
     is_creator = row["created_by"] == p.agent_id
-    if not (p.is_admin or is_holder or is_creator):
+    admin = project_admin(tx, p, row["project_id"])  # global admin or admin of this task's project
+    if not (admin or is_holder or is_creator):
         if row["lease_epoch"] and payload.get("lease_epoch") is not None:
             raise Conflict(
                 f"stale lease for task #{task_id}: you no longer hold it", reason="stale_lease",
@@ -430,8 +441,8 @@ def _update_task_tx(tx: Executor, p: Principal, ch: Row, task_id: int, payload: 
         raise Forbidden("only the assignee, the creator or an admin can update this task")
     if payload.get("if_version") is not None and v.integer(payload["if_version"], "if_version", lo=1) != row["version"]:
         raise Conflict("task changed since you read it", current=_shape(tx, row))
-    holder_write = payload.get("lease_epoch") is not None or (is_holder and not p.is_admin and not is_creator)
-    if holder_write or (is_holder and payload.get("status") in HOLDER_ONLY and not p.is_admin):
+    holder_write = payload.get("lease_epoch") is not None or (is_holder and not admin and not is_creator)
+    if holder_write or (is_holder and payload.get("status") in HOLDER_ONLY and not admin):
         _check_holder(tx, p, row, payload, now)
     sets: list[str] = ["version = version + 1", "updated_at = ?"]
     params: list[Any] = [now]
@@ -443,7 +454,7 @@ def _update_task_tx(tx: Executor, p: Principal, ch: Row, task_id: int, payload: 
             if new_status not in TRANSITIONS.get(str(row["status"]), ()):
                 raise Conflict(f"invalid transition {row['status']} -> {new_status}", reason="invalid_transition")
             leased_by_other = row["status"] in ACTIVE and row["assignee_id"] not in (None, p.agent_id)
-            if new_status in HOLDER_ONLY and leased_by_other and not p.is_admin:
+            if new_status in HOLDER_ONLY and leased_by_other and not admin:
                 raise Forbidden(f"only the lease holder can move task #{task_id} to {new_status}")
             changes["status"] = new_status
     if "assignee" in payload:
@@ -453,7 +464,7 @@ def _update_task_tx(tx: Executor, p: Principal, ch: Row, task_id: int, payload: 
             changes["assignee"] = None
             changes.setdefault("status", "open")
         else:
-            if not (p.is_admin or is_creator):
+            if not (admin or is_creator):
                 raise Forbidden("only the creator or an admin can reassign a task")
             a = agent_by_name(tx, v.name(payload["assignee"], "assignee"))
             sets.append("assignee_id = ?")
@@ -472,7 +483,7 @@ def _update_task_tx(tx: Executor, p: Principal, ch: Row, task_id: int, payload: 
         changes["priority"] = params[-1]
     deps = _dep_list(payload)
     if deps is not None:
-        if not (p.is_admin or is_creator):
+        if not (admin or is_creator):
             raise Forbidden("only the creator or an admin can change dependencies")
         _validate_deps(tx, task_id, int(row["project_id"] or 0), deps)
         tx.execute("DELETE FROM task_deps WHERE task_id = ?", (task_id,))
@@ -511,6 +522,11 @@ def _update_task_tx(tx: Executor, p: Principal, ch: Row, task_id: int, payload: 
     note = v.text(payload.get("note"), "note", 2000)
     summary = ", ".join(f"{k}={val}" for k, val in changes.items())
     body = f"@{p.name} updated task #{task_id} ({summary})" + (f": {note}" if note else "")
+    prio = 2
+    if changes.get("assignee"):  # the new assignee is told in the task's channel, at the task's priority
+        prio = int(changes["priority"] if "priority" in changes else row["priority"])
+        title = v.text(payload.get("title"), "title", 200) if "title" in payload else str(row["title"])
+        body = f"@{changes['assignee']} you were assigned task #{task_id} (p{prio}): {title}. {body}"
     mentions = [x for x in (changes.get("assignee"), row["creator"]) if x and x != p.name]
     etype = "task.blocked" if changes.get("status") == "blocked" else "task.updated"
     emit(
@@ -518,7 +534,7 @@ def _update_task_tx(tx: Executor, p: Principal, ch: Row, task_id: int, payload: 
         session_id=payload.get("session_id") if isinstance(payload.get("session_id"), str) else None,
         task_id=task_id, data={**changes, "from": row["status"], "note": note[:300] if note else None},
     )  # fmt: skip
-    sys_message(tx, p, ch, body, {"task_id": task_id, "event": "updated", **changes}, mentions)
+    sys_message(tx, p, ch, body, {"task_id": task_id, "event": "updated", **changes}, mentions, prio)
     return get_task(tx, p, task_id)
 
 

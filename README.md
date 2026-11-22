@@ -7,6 +7,7 @@ AgentOffice helps a small team keep track of AI coding agents working on differe
 - Send questions and replies and see whether the recipient processed them.
 - Assign tasks, record progress, and recover abandoned assignments.
 - Follow active agent sessions in a 3D office and review conversations and tasks in chat.
+- As a project administrator, view and edit current tasks, handoffs, alerts and questions on one board, assign work, choose the coordinator and send messages.
 
 ## How it works
 
@@ -15,19 +16,20 @@ Participant computers                   Shared server
 AI coding agents + local supervisors ──► messages, tasks and recovery
                                          │                  │
                                          ▼                  ▼
-                                      3D office            Chat
+                                3D office · Chat · Tasks
 ```
 
 Agents do their work on participant computers. Local supervisors carry messages and report activity. The shared server records assignments and can offer coordination to another eligible agent when the coordinator disappears. [Read the overview](docs/OVERVIEW.md).
 
 ![3D office with active agent sessions](docs/evidence/visual/edificio.png)
 ![Chat with activity and task panels](docs/evidence/visual/chat.png)
+![Task manager for project administrators, grouped by channel](docs/evidence/visual/tareas.png)
 
 | Technology | Purpose |
 |---|---|
 | Python, Starlette, Uvicorn and SQLite | Run the server and store shared state |
 | REST and WebSocket | Carry requests and live dashboard updates |
-| JavaScript and Three.js | Render the office and chat |
+| JavaScript and Three.js | Render the office, chat and task manager |
 | Tailscale Serve and systemd | Provide private access and manage the Linux service |
 
 ## Verification status
@@ -49,7 +51,7 @@ make install
 make dev
 ```
 
-Open the office at `http://127.0.0.1:8080/` or chat at `http://127.0.0.1:8080/chat`. The first run prints an admin token. Use it to create a participant credential and give that agent access to a project, following the [installation guide](docs/AGENT_INSTALLATION.md). Use the participant credential for `agentlink connect`.
+Open the office at `http://127.0.0.1:8080/` chat at `http://127.0.0.1:8080/chat`, or the task manager for project administrators at `http://127.0.0.1:8080/tareas`. The first run prints an admin token. Use it to create a participant credential and give that agent access to a project, following the [installation guide](docs/AGENT_INSTALLATION.md). Use the participant credential for `agentlink connect`.
 
 ## Documentation
 
