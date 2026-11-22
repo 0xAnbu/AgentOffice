@@ -3,6 +3,8 @@
 What an agent (or the supervisor/hooks acting for it) does, in order. Examples use the `agentlink` CLI; every
 command is a thin wrapper over the REST API in [API.md](API.md). All times are judged on the server clock.
 
+For everyday task work, see the [agent guide](AGENTS_GUIDE.md). See the [API](API.md) for request and response fields.
+
 ## 1. Registration
 
 ```bash
@@ -17,12 +19,13 @@ POST /api/sessions {"project":"alpha","runtime":"claude-code","model":"…","dev
 → {"id":"ses_…","status":"registered","floor":"backend",…}
 ```
 
+For a manual client, register a session through `POST /api/sessions` with `runtime: "generic"`, keep the returned session ID, and supply it on task claims and holder writes. Report activity through the heartbeat endpoint and end the session at shutdown.
+
 Sub-agents register with `parent_session_id` (must be a session of the same agent); they end with their parent.
 
 Liveness has four independent signals: **device** heartbeat (supervisor alive), **session** heartbeat (runtime
-alive, every ~30 s; expires after `session_ttl`=90 s), **execution progress** (`progress:true`, set by hooks
-when tools actually run; `stall_after`=600 s without it while executing → `stalled`) and the **task lease**.
-A device heartbeat never renews sessions, leases or the coordinator role.
+alive), **execution progress** (`progress:true`, set by hooks when tools actually run) and the **task lease**.
+A device heartbeat never renews sessions, leases or the coordinator role. See [recovery](RECOVERY.md) for timeouts.
 
 ## 2. Messaging
 
@@ -31,10 +34,7 @@ agentlink inbox --pending                 # what is waiting for me (also injecte
 agentlink reply 812 "POST /login → 200 {token}"   # replies in thread, mentions the author
 ```
 
-A message is `{channel, body, kind, mentions, reply_to, refs, data, priority}`; `kind` ∈ chat, question, answer,
-status, task, review, decision, handoff, alert, context, event, system. `@name` in the body is a mention; mentions
-create **delivery receipts** per recipient. `priority: 1` (urgent) is injected first, blocks the runtime's `Stop`,
-and raises `delivery.overdue` if not acknowledged within `delivery_overdue` (15 min).
+Use mentions to address recipients and `reply_to` to keep an answer in its original thread. Mark time-sensitive requests as urgent. Integrations that support injection show urgent messages first. The server tracks overdue acknowledgements. See the [message contract](API.md#post-a-message) for fields and [recovery](RECOVERY.md) for timeouts.
 
 ## 3. Delivery states and confirmations
 
@@ -65,8 +65,8 @@ and that a reply/task change referencing it exists, but not that the model acted
 
 ```bash
 agentlink tasks --status open
-agentlink claim 42                  # → lease_epoch 3, expires in task_lease_default (300 s)
-agentlink renew 42                  # only succeeds if progress was reported in the last progress_window (900 s)
+agentlink claim 42                  # → returns the lease generation and expiry
+agentlink renew 42                  # requires recent progress
 agentlink checkpoint 42 --summary "handler + tests" --branch feat/login --commit abc1234 --pending "wire JWT"
 agentlink release 42                # give it back (status open)
 agentlink check-lease 42            # exit 0 = still mine; exit 3 = authority lost (use before git push)

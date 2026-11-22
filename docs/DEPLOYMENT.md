@@ -4,8 +4,7 @@ One backend instance, SQLite on local disk, systemd, private HTTPS through Tails
 Healthchecks.io. No Docker, no public port, no domain.
 
 > **Verification status.** The scripts and units below were verified on Linux x86_64 (Kali, systemd 262,
-> Python 3.14) under `systemd --user` with `deployment/verify.sh` (20/20 checks, log in
-> `docs/evidence/deployment-verify-*.log`) and by CI. They have **not** yet been run on a Raspberry Pi, and Tailscale
+> Python 3.14) under `systemd --user` and by CI. See the [deployment evidence](evidence/README.md). They have **not** yet been run on a Raspberry Pi, and Tailscale
 > Serve and a real Healthchecks.io check have not been configured end-to-end. See the checklist at the end.
 
 ## Requirements
@@ -20,12 +19,41 @@ Healthchecks.io. No Docker, no public port, no domain.
 
 ## Install
 
+### Recommended: distribution with Python 3.12 or later
+
+On Debian 13, Raspberry Pi OS based on Debian 13, or Ubuntu 24.04:
+
 ```bash
+sudo apt update
 sudo apt install -y git curl python3 python3-venv
-sudo git clone https://github.com/0xAnbu/AgentOffice /opt/agent-office/src
-sudo /opt/agent-office/src/deployment/install.sh          # prints the admin token ONCE
-curl -s http://127.0.0.1:8080/api/health?deep=1
+python3 --version
+AO_PYTHON=/usr/bin/python3
 ```
+
+### Alternative: Bookworm with managed Python
+
+Install `uv` using the [official installer instructions](https://docs.astral.sh/uv/getting-started/installation/). Store the managed interpreter under `/opt` so the service can read it when systemd protects home directories.
+
+```bash
+sudo apt update
+sudo apt install -y git curl ca-certificates python3
+AO_UV="$(command -v uv)"
+sudo env UV_PYTHON_INSTALL_DIR=/opt/agent-office/python "$AO_UV" python install 3.12
+AO_PYTHON="$(sudo env UV_PYTHON_INSTALL_DIR=/opt/agent-office/python "$AO_UV" python find --managed-python 3.12)"
+"$AO_PYTHON" --version
+```
+
+### Install and check the service
+
+Use the interpreter selected above. Keep the path available for updates because releases create a fresh virtual environment.
+
+```bash
+sudo git clone https://github.com/0xAnbu/AgentOffice /opt/agent-office/src
+sudo env PYTHON="$AO_PYTHON" /opt/agent-office/src/deployment/install.sh
+curl -fsS 'http://127.0.0.1:8080/api/health?deep=1'
+```
+
+Save the admin token printed on first installation in a secure location.
 
 What it does (idempotent; re-running keeps the database and secrets):
 
@@ -102,8 +130,8 @@ database leaves the service unhealthy, the previous one is put back automaticall
 ## Update and rollback
 
 ```bash
-sudo /opt/agent-office/current/deployment/update.sh            # fetch + deploy origin/main
-sudo /opt/agent-office/current/deployment/update.sh v0.2.0     # or a tag / commit
+sudo env PYTHON="$AO_PYTHON" /opt/agent-office/current/deployment/update.sh            # fetch + deploy origin/main
+sudo env PYTHON="$AO_PYTHON" /opt/agent-office/current/deployment/update.sh v0.2.0     # or a tag / commit
 sudo /opt/agent-office/current/deployment/update.sh --rollback # back to the previous release
 ```
 

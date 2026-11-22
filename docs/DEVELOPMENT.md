@@ -31,7 +31,7 @@ walking/in the elevator, builds) and `oficinaMedida` the frame figures (`fps` = 
 
 ### Rendering cost
 
-- **Adaptive frame rate.** Drawing is the cost (the JS per frame is ~0.1–1.5 ms). The loop asks for 60 fps while the
+- **Adaptive frame rate.** The loop asks for 60 fps while the
   camera moves, 30 while someone walks / rides the elevator / something flies or right after an event, 15 while
   someone works at a desk, 8 with only ambient motion (traffic, screens) and 2 after 60 s with nothing at all; 0 in a
   hidden tab. Any input, event, changed snapshot, theme change or resize wakes it on the next display frame. The world
@@ -40,7 +40,7 @@ walking/in the elevator, builds) and `oficinaMedida` the frame figures (`fps` = 
 - **GPU resources have an owner** (`static/office/recursos.js`). A rebuild (a desk appears/disappears) frees the
   previous building's geometries, materials, instance buffers and textures; shared resources (floor textures, cached
   geometries, contact shadow, halo, sky and environment per theme) are created once and never freed.
-- `make render` (`scripts/render_check.py`) measures all of this; see TESTING.md.
+- `make render` (`scripts/render_check.py`) measures these behaviours. See [Testing](TESTING.md) for procedures and [Evidence](evidence/README.md) for past measurements.
 
 To see a busy office without real agents (testing only):
 

@@ -3,6 +3,19 @@
 Statuses: **accepted** (approved by the user or a standard low-impact measure),
 **proposed** (awaiting approval), **rejected**.
 
+## Applicability today
+
+| ADR | Current scope | Later decision |
+|---|---|---|
+| 001 | Python and Starlette remain in use. Its serverless and mobile targets are historical. | ADR-101 |
+| 002 | Historical SQL portability. The supported deployment uses SQLite only. | ADR-101 |
+| 003 | REST long-polling remains available. Dashboards use WebSocket with a REST fallback. | ADR-103 |
+| 004–006, 008–009 | Authentication, retention and access rules remain in use. | |
+| 007 | Vercel, Neon and Termux deployment are historical. | ADR-101 |
+| 101–105 | Current AgentOffice decisions. | |
+
+## AgentLink history
+
 ### ADR-001 · Python + Starlette with pure-Python dependencies: accepted
 - **Context**: Node isn't available in the development environment; the same code must run on Vercel,
   a VPS and Android/Termux (bionic libc, where manylinux wheels don't work).
@@ -11,14 +24,14 @@ Statuses: **accepted** (approved by the user or a standard low-impact measure),
 - **Decision**: Starlette + uvicorn + pg8000. Every dependency is a `py3-none-any` wheel (checked).
 - **Consequence**: manual validation (`validation.py`) instead of pydantic schemas.
 
-### ADR-002 · Same SQL for SQLite and Postgres: accepted
+### ADR-002 · Same SQL for SQLite and Postgres: historical (ADR-101)
 - **Context**: SQLite for dev/phone/VPS (zero ops); Postgres (Neon) on serverless, where there's no persistent disk.
 - **Alternatives**: an ORM (rejected: dependency weight, opaque SQL); separate adapters per engine (rejected: duplication).
 - **Decision**: a common subset (`RETURNING`, `ON CONFLICT`, epoch-ms integers, JSON as TEXT) with `?` → `%s`.
 - **Consequence**: SQLite ≥ 3.35 required. The Postgres suite runs in CI (Postgres 17 service);
   it could not be run locally.
 
-### ADR-003 · Long-polling instead of WebSockets/SSE: accepted
+### ADR-003 · Long-polling instead of WebSockets/SSE: retained for REST (ADR-103 for dashboards)
 - **Context**: Vercel functions don't keep WebSockets open; agents are HTTP clients without a browser.
 - **Alternatives**: WebSockets (rejected: not available on serverless); SSE (rejected for v1: same
   instance-time cost, harder to retry); plain polling (rejected: latency/cost).
@@ -69,7 +82,7 @@ Statuses: **accepted** (approved by the user or a standard low-impact measure),
 ## Agent Office decisions (2026-11-21)
 
 ### ADR-101 · One backend, SQLite WAL as the only source of truth: accepted
-- **Context**: five participants, a Raspberry Pi, no paid services; INSTRUCTIONS forbid Redis/Kubernetes/queues.
+- **Context**: five participants, a Raspberry Pi, no paid services; keep the deployment to one host and minimize external services.
 - **Decision**: a single Starlette process; every authority decision is a conditional UPDATE in one SQLite database;
   the reconciler runs inside that process; external checks are timers, not a second coordinator.
 - **Consequence**: no horizontal scaling (not needed); the Postgres/serverless path inherited from AgentLink is not
@@ -90,7 +103,7 @@ Statuses: **accepted** (approved by the user or a standard low-impact measure),
 - **Decision**: Claude Code/Codex hooks, OpenCode plugin, and an opt-in headless turn (`codex exec`/`opencode run`)
   when hooks are not trusted/available. Codex hook trust is left to the participant.
 - **Consequence**: Codex interactive hooks are unverified until a participant trusts them; headless turns spend quota,
-  so they are opt-in and never retried automatically.
+  so they are opt-in. Eligible failures and empty replies receive bounded retries with exponential delay. Timeouts stay pending for manual handling. The [installation guide](AGENT_INSTALLATION.md#2-connect-a-runtime) specifies the retry settings.
 
 ### ADR-105 · Keep the original 3D characters; no simulation in production: accepted
 - **Decision**: oficina-virtual's render, characters and animations are kept unchanged where possible; data comes only

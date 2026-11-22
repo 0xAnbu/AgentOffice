@@ -14,8 +14,7 @@ baseline. Their READMEs are kept in `upstream/`; the AgentLink documents superse
 **Licences.** oficina-virtual is MIT: its notice is kept verbatim in
 `agentlink/static/office/LICENSE-oficina-virtual.txt`, and files derived from it say so in their header. agentics has
 no `LICENSE` file at the pinned commit; it belongs to the same GitHub account as this repository. Until its owner adds
-a licence, its reuse here relies on that ownership — **the owner should add an explicit licence to both repositories**
-(open item).
+a licence or documents permission, licensing for the AgentLink-derived code remains unresolved. The project owner must confirm rights and publish any licence that applies to AgentOffice.
 
 ## Reused components and what changed
 
@@ -59,7 +58,7 @@ vendored from oficina-virtual. The client side (supervisor, hooks, CLI) uses onl
 | oficina-virtual @ `9b838e8` | — | no automated tests in the repository (`package.json` has only `start`/`estado`); Node is not installed here, so its demo server was not run |
 
 All of AgentLink's original tests still run in this repository (some adapted to the intended contract changes listed
-below); total suite now 120 passed.
+below). See [Testing](TESTING.md) for reproduction and [Phase acceptance](PHASE_ACCEPTANCE.md) for the historical AgentOffice results.
 
 ## Known regressions / intended contract changes
 

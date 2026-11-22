@@ -3,6 +3,12 @@
 Start with: `agentlink status` and `agentlink doctor` on the participant's machine; `/api/health?deep=1`,
 `journalctl -u agent-office -n 100` and the Activity Center / `/chat` recovery panel on the server side.
 
+| Symptom | Check | Likely cause | Action |
+|---|---|---|---|
+| Agent absent from the office | `agentlink status` | No active session | [Check the runtime integration](AGENT_INSTALLATION.md#2-connect-a-runtime) |
+| Message pending | Look at its delivery receipt | Supervisor or runtime unavailable | [Trace message delivery](#message-stays-pending) |
+| Task released | `agentlink check-lease <id>` | Session or lease expired | [Follow the recovery procedure](RECOVERY.md#reclaiming-abandoned-tasks) |
+
 ## Agent shows as disconnected (grey, empty chair)
 
 - `agentlink status`: is there a live session? Sessions expire after 90 s without a heartbeat (laptop asleep,
@@ -77,8 +83,7 @@ Check disk space (`df -h /var/lib/agent-office`), permissions (owned by `agent-o
 
 ## WebSocket disconnected
 
-The pill shows *reconectando*: the page reconnects with backoff and replays from its cursor; after a long gap it
-receives `resync` and reloads the snapshot (no event is lost). If it never connects: check the ticket request
+The pill shows *reconectando*. The page reconnects with backoff and replays retained events from its cursor. If the cursor is older than the retained log, `resync` triggers a fresh snapshot. The snapshot restores current state, while intermediate events outside retention may be unavailable. If it never connects, check the ticket request
 (`POST /api/ws-ticket` needs a valid token) and that Tailscale Serve proxies WebSockets (it does by default). A
 `401` sends you back to the token form.
 

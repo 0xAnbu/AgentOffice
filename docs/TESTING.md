@@ -1,8 +1,12 @@
 # Testing
 
+## Run the checks
+
+Run `make install` with Python 3.12 or later first.
+
 | Command | What | Needs |
 |---|---|---|
-| `make test` | all automated tests (120 at the time of writing) | nothing |
+| `make test` | all automated tests | nothing |
 | `make test-failures` | recovery and client failure scenarios (`tests/test_recovery.py`, `tests/test_client.py`) | nothing |
 | `make smoke` | a real uvicorn server driven through the CLI, curl and a WebSocket client | nothing |
 | `bash deployment/verify.sh` | install/service/backup/restore/healthcheck/update/rollback under `systemd --user` | Linux + systemd |
@@ -21,7 +25,7 @@
   runtime hook inputs, produced deterministically; a fake `codex` binary tests headless delivery.
 - **Concurrency** — 8 sessions claim one task in parallel threads (exactly one wins); 3 concurrent coordinator
   acceptances (exactly one wins).
-- **Recovery** — every scenario of INSTRUCTIONS §15 below.
+- **Recovery** — the failure scenarios mapped to checks below.
 - **Synthetic agents** — `scripts/synthetic_office.py` (5 owners, 8 agents, sub-agents) drives the *real* API for
   dashboards and manual checks. Testing only; refuses `AGENTLINK_MODE=production`; sessions are labelled
   `synthetic`.
@@ -36,7 +40,7 @@
   `docs/evidence/runtime-e2e-<utc>.json` with every step and the runtime versions. OpenCode should be run with a
   model the account can use (`AGENTLINK_OPENCODE_MODEL`, e.g. `opencode-go/deepseek-v4.1-flash`).
 
-## INSTRUCTIONS §15 scenarios → tests
+## Acceptance scenarios and checks
 
 | # | Scenario | Test / evidence |
 |---|---|---|
@@ -60,7 +64,7 @@
 | 18 | Project isolation | `test_project_isolation`, `test_ws_filters_unauthorized_projects`, `test_monitor_scoped_to_project` |
 | — | External review 2026-11-21 (findings 1–8, 12–16, 20, 22) | `tests/test_review_fixes.py`: 15 behavioural tests, each verified to fail on `fbe3e7b` (before the fixes) and pass after. Findings 9–11, 17, 19 only apply to Postgres/multi-instance (unsupported); 21 (inbox starts from the oldest mention) is the intended contract |
 | — | Second external review 2026-11-22 (findings 5, 6, 9, 10, 11) | `tests/test_review_fixes.py` (6 more tests, verified to fail on `f9b3922`); restore safety in `deployment/verify.sh`; anonymous view and `/chat` scroll behaviour in `visual_check.py`. Findings 1–4, 7, 8 and the server half of 10 are PostgreSQL/multi-instance only |
-| — | Rendering audit 2026-11-22 (continuous redraw, duplicated textures, resources not freed on rebuild, DPR, shadow map) | `scripts/render_check.py`: run on `main` (392f361) it reports 1839 geometries / 636 textures leaked after 6 rebuilds and textures added by theme switches; on this branch 1 / 1 and 0 |
+| — | Rendering audit 2026-11-22 (continuous redraw, duplicated textures, resources not freed on rebuild, DPR, shadow map) | `scripts/render_check.py`; compare rebuilds and theme switches with the [recorded runs](evidence/README.md) |
 | — | Phase 8 integral scenario | `test_five_participants_full_lifecycle` (5 independent clients over real HTTP) |
 
 ## Credentials
