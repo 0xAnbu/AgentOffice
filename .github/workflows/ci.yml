@@ -19,6 +19,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4  # the OpenCode plugin test runs the generated JS
+        with:
+          node-version: "22"
       - run: pip install -r requirements-dev.txt
       - name: lint + format
         run: ruff format --check agentlink tests scripts && ruff check agentlink tests scripts
@@ -30,6 +33,22 @@ jobs:
         run: PY=python bash scripts/smoke.sh
       - name: deployment scripts parse
         run: for f in deployment/*.sh; do bash -n "$f"; done
+
+  windows:
+    # The client on Windows: quoting, hooks run by cmd.exe/Git Bash, a full connect→reply→disconnect against a real
+    # local server. Task Scheduler and ACLs are covered by simulated tests only (connect runs with --no-service).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install -r requirements-dev.txt
+      - name: client tests (no LLM, no network)
+        run: pytest -q -p no:warnings tests/test_cross_platform.py tests/test_client_smoke.py
 
   deployment:
     # Real install/restart/backup/restore/healthcheck/update/rollback under systemd --user (not a Raspberry Pi).
