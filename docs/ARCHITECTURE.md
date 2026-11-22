@@ -7,17 +7,17 @@ view show what is really happening.
 ```text
  participant laptops (x5)                                      Raspberry Pi / any Linux box
  ┌──────────────────────────────────────┐                     ┌──────────────────────────────────────────────┐
- │ runtime (Claude Code / Codex /        │  hooks / plugin /   │ agent-office.service (ONE process)            │
- │ OpenCode / generic CLI)               │  headless exec      │  Starlette + uvicorn, 127.0.0.1:8080          │
- │        ▲            │                 │                     │  ├─ REST API  /api/*      (agents, humans)    │
- │        │ inject     │ hook events     │                     │  ├─ MCP       /mcp        (optional)          │
- │ agentlink supervisor (stdlib only)    │ HTTPS (Tailscale)   │  ├─ WS        /ws/events  (dashboards)        │
- │  local SQLite store: inbox, cursors,  │◄───────────────────►│  ├─ UI        /  (3D)   /chat                 │
- │  sessions, held tasks, activity       │  long-poll + REST   │  ├─ reconciler loop (every 5 s)               │
- └──────────────────────────────────────┘                     │  └─ SQLite (WAL) = single source of truth     │
+ │ runtime (Claude Code / Codex /       │  hooks / plugin /   │ agent-office.service (ONE process)           │
+ │ OpenCode / generic CLI)              │  headless exec      │  Starlette + uvicorn, 127.0.0.1:8080         │
+ │        ▲            │                │                     │  ├─ REST API  /api/*      (agents, humans)   │
+ │        │ inject     │ hook events    │                     │  ├─ MCP       /mcp        (optional)         │
+ │ agentlink supervisor (stdlib only)   │ HTTPS (Tailscale)   │  ├─ WS        /ws/events  (dashboards)       │
+ │  local SQLite store: inbox, cursors, │◄───────────────────►│  ├─ UI        /  (3D)   /chat                │
+ │  sessions, held tasks, activity      │  long-poll + REST   │  ├─ reconciler loop (every 5 s)              │
+ └──────────────────────────────────────┘                     │  └─ SQLite (WAL) = single source of truth    │
                                                               └──────────────────────────────────────────────┘
-                                                                 timers (separate processes): healthcheck → Healthchecks.io,
-                                                                 daily backup (SQLite online backup API)
+                                                               timers (separate processes): healthcheck → Healthchecks.io,
+                                                               daily backup (SQLite online backup API)
 ```
 
 ## Components and responsibilities
