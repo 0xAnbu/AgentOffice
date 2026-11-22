@@ -1,0 +1,432 @@
+{
+ "repo_commit": "392f361",
+ "at": "2026-11-22T04:12:25",
+ "webgl": "SwiftShader (software)",
+ "cpu": [
+  {
+   "agentes": 0,
+   "query": "?calidad=baja&dpr=1&ahorro=0",
+   "ventana": "200,120",
+   "escala": 1,
+   "procesos": {
+    "browser": {
+     "cpu_pct": 0.2,
+     "pss_mb": 138.0
+    },
+    "zygote": {
+     "cpu_pct": 0.0,
+     "pss_mb": 35.2
+    },
+    "gpu-process": {
+     "cpu_pct": 980.4,
+     "pss_mb": 546.5
+    },
+    "utility": {
+     "cpu_pct": 0.0,
+     "pss_mb": 51.9
+    },
+    "renderer": {
+     "cpu_pct": 6.3,
+     "pss_mb": 291.0
+    },
+    "TOTAL": {
+     "cpu_pct": 986.9,
+     "pss_mb": 1062.6
+    }
+   },
+   "pagina": {
+    "fps_real": 21,
+    "fps_objetivo": 30,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 8,
+    "triangulos": 78028,
+    "geometrias": 124,
+    "texturas": 6,
+    "construcciones": 1,
+    "personas": 0,
+    "liberado": {
+     "geometrias": 0,
+     "materiales": 0,
+     "texturas": 0,
+     "instancias": 0
+    },
+    "cuadros_dibujados_por_s": 20.9
+   },
+   "errores": []
+  },
+  {
+   "agentes": 0,
+   "query": "?calidad=baja&dpr=1",
+   "ventana": "200,120",
+   "escala": 1,
+   "procesos": {
+    "browser": {
+     "cpu_pct": 0.2,
+     "pss_mb": 122.7
+    },
+    "zygote": {
+     "cpu_pct": 0.0,
+     "pss_mb": 22.5
+    },
+    "gpu-process": {
+     "cpu_pct": 298.9,
+     "pss_mb": 415.8
+    },
+    "utility": {
+     "cpu_pct": 0.2,
+     "pss_mb": 30.4
+    },
+    "renderer": {
+     "cpu_pct": 5.8,
+     "pss_mb": 150.7
+    },
+    "TOTAL": {
+     "cpu_pct": 305.2,
+     "pss_mb": 742.1
+    }
+   },
+   "pagina": {
+    "fps_real": 8,
+    "fps_objetivo": 8,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 8,
+    "triangulos": 78028,
+    "geometrias": 124,
+    "texturas": 6,
+    "construcciones": 1,
+    "personas": 0,
+    "liberado": {
+     "geometrias": 0,
+     "materiales": 0,
+     "texturas": 0,
+     "instancias": 0
+    },
+    "cuadros_dibujados_por_s": 7.5
+   },
+   "errores": []
+  },
+  {
+   "agentes": 12,
+   "query": "?calidad=baja&dpr=1&ahorro=0",
+   "ventana": "200,120",
+   "escala": 1,
+   "procesos": {
+    "browser": {
+     "cpu_pct": 0.3,
+     "pss_mb": 136.1
+    },
+    "zygote": {
+     "cpu_pct": 0.0,
+     "pss_mb": 36.4
+    },
+    "gpu-process": {
+     "cpu_pct": 875.3,
+     "pss_mb": 552.3
+    },
+    "utility": {
+     "cpu_pct": 0.0,
+     "pss_mb": 52.3
+    },
+    "renderer": {
+     "cpu_pct": 6.3,
+     "pss_mb": 304.8
+    },
+    "TOTAL": {
+     "cpu_pct": 881.9,
+     "pss_mb": 1081.9
+    }
+   },
+   "pagina": {
+    "fps_real": 16,
+    "fps_objetivo": 30,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 93,
+    "triangulos": 146164,
+    "geometrias": 124,
+    "texturas": 6,
+    "construcciones": 1,
+    "personas": 12,
+    "liberado": {
+     "geometrias": 0,
+     "materiales": 0,
+     "texturas": 0,
+     "instancias": 0
+    },
+    "cuadros_dibujados_por_s": 16.8
+   },
+   "errores": []
+  },
+  {
+   "agentes": 12,
+   "query": "?calidad=baja&dpr=1",
+   "ventana": "200,120",
+   "escala": 1,
+   "procesos": {
+    "browser": {
+     "cpu_pct": 0.1,
+     "pss_mb": 136.3
+    },
+    "zygote": {
+     "cpu_pct": 0.0,
+     "pss_mb": 35.7
+    },
+    "gpu-process": {
+     "cpu_pct": 760.1,
+     "pss_mb": 552.8
+    },
+    "utility": {
+     "cpu_pct": 0.1,
+     "pss_mb": 52.3
+    },
+    "renderer": {
+     "cpu_pct": 6.4,
+     "pss_mb": 301.7
+    },
+    "TOTAL": {
+     "cpu_pct": 766.7,
+     "pss_mb": 1078.7
+    }
+   },
+   "pagina": {
+    "fps_real": 15,
+    "fps_objetivo": 15,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 93,
+    "triangulos": 146164,
+    "geometrias": 124,
+    "texturas": 6,
+    "construcciones": 1,
+    "personas": 12,
+    "liberado": {
+     "geometrias": 0,
+     "materiales": 0,
+     "texturas": 0,
+     "instancias": 0
+    },
+    "cuadros_dibujados_por_s": 15.0
+   },
+   "errores": []
+  },
+  {
+   "agentes": 12,
+   "query": "",
+   "ventana": "1600,1000",
+   "escala": 2,
+   "procesos": {
+    "browser": {
+     "cpu_pct": 0.4,
+     "pss_mb": 96.5
+    },
+    "zygote": {
+     "cpu_pct": 0.0,
+     "pss_mb": 27.3
+    },
+    "gpu-process": {
+     "cpu_pct": 691.6,
+     "pss_mb": 1458.8
+    },
+    "utility": {
+     "cpu_pct": 0.1,
+     "pss_mb": 44.8
+    },
+    "renderer": {
+     "cpu_pct": 1.2,
+     "pss_mb": 289.1
+    },
+    "TOTAL": {
+     "cpu_pct": 693.2,
+     "pss_mb": 1916.4
+    }
+   },
+   "pagina": {
+    "fps_real": 1,
+    "fps_objetivo": 15,
+    "calidad": "baja",
+    "dpr": 1.5,
+    "llamadas": 356,
+    "triangulos": 465048,
+    "geometrias": 327,
+    "texturas": 80,
+    "construcciones": 1,
+    "personas": 12,
+    "liberado": {
+     "geometrias": 0,
+     "materiales": 0,
+     "texturas": 0,
+     "instancias": 0
+    },
+    "cuadros_dibujados_por_s": 0.4
+   },
+   "errores": []
+  }
+ ],
+ "rebuild": {
+  "filas": [
+   {
+    "fps_real": 1,
+    "fps_objetivo": 8,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 328,
+    "triangulos": 460280,
+    "geometrias": 315,
+    "texturas": 75,
+    "construcciones": 1,
+    "personas": 12,
+    "liberado": {
+     "geometrias": 0,
+     "materiales": 0,
+     "texturas": 0,
+     "instancias": 0
+    }
+   },
+   {
+    "fps_real": 0,
+    "fps_objetivo": 8,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 330,
+    "triangulos": 466854,
+    "geometrias": 317,
+    "texturas": 76,
+    "construcciones": 2,
+    "personas": 13,
+    "liberado": {
+     "geometrias": 355,
+     "materiales": 219,
+     "texturas": 99,
+     "instancias": 94
+    }
+   },
+   {
+    "fps_real": 1,
+    "fps_objetivo": 8,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 332,
+    "triangulos": 473440,
+    "geometrias": 318,
+    "texturas": 76,
+    "construcciones": 3,
+    "personas": 14,
+    "liberado": {
+     "geometrias": 357,
+     "materiales": 221,
+     "texturas": 99,
+     "instancias": 94
+    }
+   },
+   {
+    "fps_real": 1,
+    "fps_objetivo": 8,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 335,
+    "triangulos": 480788,
+    "geometrias": 320,
+    "texturas": 77,
+    "construcciones": 4,
+    "personas": 15,
+    "liberado": {
+     "geometrias": 359,
+     "materiales": 223,
+     "texturas": 99,
+     "instancias": 94
+    }
+   },
+   {
+    "fps_real": 2,
+    "fps_objetivo": 8,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 338,
+    "triangulos": 489172,
+    "geometrias": 322,
+    "texturas": 78,
+    "construcciones": 5,
+    "personas": 16,
+    "liberado": {
+     "geometrias": 362,
+     "materiales": 226,
+     "texturas": 100,
+     "instancias": 94
+    }
+   },
+   {
+    "fps_real": 1,
+    "fps_objetivo": 8,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 341,
+    "triangulos": 497644,
+    "geometrias": 324,
+    "texturas": 79,
+    "construcciones": 6,
+    "personas": 17,
+    "liberado": {
+     "geometrias": 365,
+     "materiales": 229,
+     "texturas": 101,
+     "instancias": 94
+    }
+   },
+   {
+    "fps_real": 1,
+    "fps_objetivo": 8,
+    "calidad": "baja",
+    "dpr": 1,
+    "llamadas": 343,
+    "triangulos": 504242,
+    "geometrias": 325,
+    "texturas": 79,
+    "construcciones": 7,
+    "personas": 18,
+    "liberado": {
+     "geometrias": 368,
+     "materiales": 232,
+     "texturas": 102,
+     "instancias": 94
+    }
+   }
+  ],
+  "pagina_nueva_mismo_plano": {
+   "fps_real": 1,
+   "fps_objetivo": 8,
+   "calidad": "baja",
+   "dpr": 1,
+   "llamadas": 343,
+   "triangulos": 504242,
+   "geometrias": 324,
+   "texturas": 78,
+   "construcciones": 1,
+   "personas": 18,
+   "liberado": {
+    "geometrias": 0,
+    "materiales": 0,
+    "texturas": 0,
+    "instancias": 0
+   }
+  },
+  "errores": [],
+  "construcciones": 6,
+  "geometrias_de_mas": 1,
+  "texturas_de_mas": 1,
+  "crecimiento_con_6_cambios_de_tema": {
+   "geometrias": 0,
+   "texturas": 0
+  }
+ },
+ "rates": {
+  "reposo_inicial": 8,
+  "camara_arrastrada": 60,
+  "tras_un_evento": 30,
+  "ambiente": 8,
+  "sin_nada_60s": 2,
+  "errores": []
+ },
+ "problemas": []
+}

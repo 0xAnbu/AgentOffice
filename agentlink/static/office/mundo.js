@@ -8,6 +8,7 @@ import * as THREE from './vendor/three.module.min.js';
 import { RoundedBoxGeometry } from './vendor/RoundedBoxGeometry.js';
 import { SVGLoader } from './vendor/SVGLoader.js';
 import * as TX from './texturas.js';
+import { fijar } from './recursos.js';
 import { D, SALA, CORREDOR, NUCLEO, HUELLA, azar, hash } from './plano3d.js';
 
 export const ALTURA = 78;              // de la calle al piso de la oficina
@@ -24,6 +25,7 @@ const BASE = {
   esf: new THREE.SphereGeometry(0.5, 12, 8).toNonIndexed(),
   ico: new THREE.IcosahedronGeometry(0.5, 1).toNonIndexed(),
 };
+for (const g of Object.values(BASE)) fijar(g);  // shared by every floor and every build
 const redondas = new Map();
 function redonda(w, h, d, r) {
   const k = `${w.toFixed(3)}|${h.toFixed(3)}|${d.toFixed(3)}|${r.toFixed(3)}`;
@@ -33,7 +35,7 @@ function redonda(w, h, d, r) {
     const seg = Math.min(w, h, d) < 0.12 && Math.max(w, h, d) < 1 ? 1 : 2;
     g = new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3));
     if (g.index) g = g.toNonIndexed();
-    redondas.set(k, g);
+    redondas.set(k, fijar(g));
   }
   return g;
 }
@@ -406,10 +408,18 @@ function cuboAGeo(c) {
 // ============================================================================================ la oficina
 // Agent Office: `y` stacks the floor in the building; only the ground floor (`conCiudad`) builds the city, the tower
 // and its sign, so a five-floor building does not render five cities.
+// The six floor textures (~25 MB of GPU memory with mipmaps) are identical on every floor and never change:
+// generated once and shared (they used to be generated again for each floor and on each rebuild).
+let suelos = null;
+function texturasDeSuelo() {
+  suelos ??= Object.fromEntries(Object.entries({ madera: TX.madera, alfombra: TX.alfombra, terrazo: TX.terrazo, deck: TX.deck, pasto: TX.pasto, concreto: TX.concreto })
+    .map(([k, f]) => [k, fijar(f())]));
+  return suelos;
+}
 export async function crearMundo({ escena, plano, renderer, logoSvg, isotipoSvg, datos, y = 0, conCiudad = true }) {
   TX.ponerAnisotropia(Math.min(8, renderer.capabilities.getMaxAnisotropy()));
   const rnd = azar(2026);
-  const texturas = { madera: TX.madera(), alfombra: TX.alfombra(), terrazo: TX.terrazo(), deck: TX.deck(), pasto: TX.pasto(), concreto: TX.concreto() };
+  const texturas = texturasDeSuelo();
   const M = materiales(texturas);
   const uniformes = { uNoche: { value: 0 } };
   const logo = TX.trazosDelLogo(logoSvg), isotipo = TX.trazosDelLogo(isotipoSvg);

@@ -162,12 +162,13 @@ implementation:
     - "Sectioned building, configurable floors by specialization, rooms per owner, original characters unchanged"
     - "Runtime/owner/coordinator/sub-agent badges; elevator transit with cab; camera, floor buttons, keyboard"
     - "Event-driven animations through a visual queue; no simulation; Activity Center; hidden controls before login"
+    - "Rendering cost: adaptive frame rate, GPU resources freed on rebuild, shared textures, DPR capped at 1.5, 2048² shadow map (no LOD)"
   pending:
     - "Frame rate on a real GPU browser (only measured with software rendering)"
     - "Human visual review on the team's screens"
 verification:
-  commands: ["python scripts/visual_check.py --admin-token ..."]
-  passed: 1
+  commands: ["python scripts/visual_check.py --admin-token ...", "python scripts/render_check.py"]
+  passed: 2
   failed: 0
   skipped: 0
   evidence:
@@ -175,6 +176,7 @@ verification:
     - "Scene built once from API data; heartbeats and a 300-event burst cause no rebuild (construcciones = 1)"
     - "Characters observed walking and inside the elevator; sub-agents and coordinator labelled"
     - "JS cost per frame ~0.3-5 ms; page round-trip 1-4 ms after the burst (rendering itself measured in SwiftShader only)"
+    - "render_check: no GPU-resource growth across rebuilds/theme switches (main leaked ~330 geometries and ~110 textures per rebuild); idle building 8 fps instead of 30 (-69% CPU at equal quality, software GL); frame-rate tiers verified"
 regressions: {detected: 0, unresolved: 0}
 limitations:
   - "Floor labels can overlap the header/floor buttons at some zoom levels (cosmetic)"

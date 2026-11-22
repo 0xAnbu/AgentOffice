@@ -2,7 +2,7 @@ PY ?= python3
 VENV := .venv
 BIN := $(VENV)/bin
 
-.PHONY: install dev test test-failures test-runtimes smoke demo visual fmt lint typecheck check load estimate token clean
+.PHONY: install dev test test-failures test-runtimes smoke demo visual render fmt lint typecheck check load estimate token clean
 
 $(BIN)/python:
 	$(PY) -m venv $(VENV)
@@ -32,6 +32,9 @@ demo: ## TESTING ONLY: synthetic participants against a running dev server (ADMI
 
 visual: ## headless Chromium check of / and /chat (TOKEN=<monitor token>)
 	$(BIN)/python scripts/visual_check.py --url http://127.0.0.1:8080 --token "$(TOKEN)"
+
+render: ## 3D rendering cost + GPU-resource leak check in headless Chromium (own temporary server, ~10 min)
+	$(BIN)/python scripts/render_check.py --out docs/evidence/render-$$(date -u +%Y%m%dT%H%M%SZ).json
 
 fmt: ## format code
 	$(BIN)/ruff format agentlink tests scripts

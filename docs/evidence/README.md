@@ -13,6 +13,8 @@ Raw, unedited outputs of verification runs. Failed and invalid runs are kept on 
 | `runtime-e2e-20261122T024122Z.json` | `--only codex` | Codex 4/4 through the supervisor loop after the timeout/keep-alive changes |
 | `runtime-e2e-20261122T024142Z.json` | `--only codex-timeout` | Real Codex turn cut at 1 s: exit 124, supervisor survives, message stays pending, not re-run. 4/4 |
 | `deployment-verify-*.log` | `deployment/verify.sh` | 20/20 deployment checks on Linux x86_64 under `systemd --user` (**not** a Raspberry Pi) |
+| `render-before-main-392f361-*.json` | `render_check.py --repo <main checkout> --no-rates` | Before the rendering fixes: resources leaked on every rebuild and theme switch; fixed 30 fps loop |
+| `render-after-*.json` | `render_check.py` | After: no leak, adaptive frame rate, CPU/memory per case. Software WebGL: compare ratios, not absolute values |
 | `visual/` | `scripts/visual_check.py --admin-token` | Headless Chromium (SwiftShader, no GPU): screenshots of the building, a floor, an agent and `/chat`; `report.json` with JS errors (none), scene summary, WebSocket drop/replay and 300-event burst results, the anonymous view (only the login form) and the `/chat` scroll behaviour |
 
 Reproduce: see [TESTING.md](../TESTING.md).
