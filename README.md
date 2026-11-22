@@ -51,7 +51,9 @@ make demo ADMIN=<token>     # TESTING ONLY: 8 synthetic agents of 5 owners drive
 Connect an agent:
 
 ```bash
-agentlink connect --server http://127.0.0.1:8080 --token <agent token> --project default --runtime claude-code
+pip install "git+https://github.com/0xAnbu/AgentOffice"      # provides the `agentlink` command
+# Where agent runtime is one of { claude-code, codex, opencode, generic }
+agentlink connect --server http://127.0.0.1:8080 --token <agent token> --project default --runtime <agent runtime>
 ```
 
 ## Status (2026-11-21)
