@@ -11,8 +11,22 @@ export AGENTLINK_URL="http://127.0.0.1:$PORT"
 
 $PY -m agentlink.serve --port "$PORT" --env-file "$WORK/none.env" >"$WORK/server.log" 2>&1 &
 SERVER=$!
-trap 'kill $SERVER 2>/dev/null || true; rm -rf "$WORK"' EXIT
-for _ in $(seq 50); do curl -fs "$AGENTLINK_URL/api/health" >/dev/null && break; sleep 0.2; done
+cleanup() {
+  local code=$?
+  if [ "$code" != 0 ]; then  # leave a diagnosis: CI deletes nothing we print
+    echo "--- smoke failed (exit $code); last lines of the server log:" >&2
+    tail -n 60 "$WORK/server.log" >&2 2>/dev/null || true
+  fi
+  kill "$SERVER" 2>/dev/null || true
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
+# Wait up to 30 s for the server (cold CI runners can be slow); stop early if the process died.
+for _ in $(seq 150); do
+  curl -fs "$AGENTLINK_URL/api/health" >/dev/null && break
+  kill -0 "$SERVER" 2>/dev/null || { echo "server process exited during startup" >&2; exit 1; }
+  sleep 0.2
+done
 
 cli() { $PY -m agentlink.cli "$@"; }
 as() { local t=$1; shift; AGENTLINK_TOKEN=$t cli "$@"; }
