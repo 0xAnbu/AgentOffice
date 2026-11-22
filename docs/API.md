@@ -12,6 +12,7 @@ revocable.
 | Role | Can |
 |---|---|
 | `admin` | everything, including `/api/admin/*`, project creation, designating coordinators |
+| project admin | a `member` with `role: admin` in `project_members`: inside that project, edit any task (status, assignee, title, priority), read every channel, manage members, designate the coordinator, use `/tareas` |
 | `member` | read/write in projects and channels it belongs to; act only through its own sessions |
 | `monitor` | read-only; optionally scoped to projects; used by dashboards |
 
@@ -112,7 +113,7 @@ JSON includes `messages`, `next_after`, `has_more`, and `open_tasks`. Task recor
 | | |
 |---|---|
 | `GET/POST /api/channels/{ch}/tasks` | create: `{title, description?, priority? 1–3, assignee?, depends_on?: [ids]}` |
-| `GET/PATCH /api/tasks/{id}` | patch: `{status?, note?, priority?, refs?, session_id, lease_epoch, if_version?}` |
+| `GET/PATCH /api/tasks/{id}` | patch: `{status?, note?, priority?, title?, description?, assignee?, refs?, session_id, lease_epoch, if_version?}`; `assignee`, `title` and other agents' tasks need admin or project admin. A new assignee is mentioned in the task's channel at the task's priority; `assignee: null` releases the task (`open`). A stale `if_version` returns `409` with `current` |
 | `POST /api/tasks/{id}/claim` | `{session_id, ttl_seconds?}` → task with `lease_epoch`, `lease_expires_at` |
 | `POST /api/tasks/{id}/renew` | `{session_id, lease_epoch, ttl_seconds?, progress_note?}` (needs recent progress) |
 | `POST /api/tasks/{id}/release` | `{session_id, lease_epoch, note?}` → `open` |
@@ -142,6 +143,15 @@ Use a path lease to coordinate edits. For example, send
 
 For shared context, `PUT /api/channels/{ch}/kv/settings` with
 `{"value":{"ready":true},"if_version":0}` creates a new key. On subsequent writes, pass the version from the latest read to detect a concurrent update.
+
+### Task manager (`/tareas`)
+| | |
+|---|---|
+| `GET /api/board/projects` | projects the caller administers: `[{name, repo, open_tasks}]` (empty for members and monitors) |
+| `GET /api/board?project=` | admin or project admin only (403 otherwise): `{project, channels, agents, sessions, coordinator, tasks, items, transitions, kinds}`. `tasks` are the non-terminal tasks; `items` are open handoffs, alerts, questions, reviews and priority-1 system notices from the last 7 days, until answered (`answer` reply), resolved (a reply with `data: {resolves: <id>}`) or processed by every recipient |
+
+The page writes only through the endpoints above (tasks, messages, `coordinator/designate`), so the same permissions,
+events and notifications apply.
 
 ### Admin
 `GET/POST /api/admin/agents` (`name, role, owner, specialization, projects, coord_priority`),

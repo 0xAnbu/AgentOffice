@@ -223,12 +223,30 @@ def is_member(db: Executor, channel_id: int, agent_id: int) -> bool:
     )
 
 
+def project_admin(db: Executor, p: Principal, project_id: Any) -> bool:
+    """Global admin, or `admin` in that project's membership (monitors never: they cannot write)."""
+    if p.is_admin:
+        return True
+    if project_id is None or p.role == "monitor":
+        return False
+    return (
+        db.one(
+            "SELECT 1 AS x FROM project_members WHERE project_id = ? AND agent_id = ? AND role = 'admin'",
+            (project_id, p.agent_id),
+        )
+        is not None
+    )
+
+
 def channel_for(db: Executor, p: Principal, ident: str | int, *, write: bool = False) -> Row:
-    """Resolve a channel and enforce access. Every channel-scoped operation calls this."""
+    """Resolve a channel and enforce access. Every channel-scoped operation calls this.
+
+    Project admins reach every channel of their project, like a global admin does for all of them.
+    """
     ch = _channel_row(db, ident)
     if write:
         p.require_writer()
-    if p.is_admin:
+    if p.is_admin or project_admin(db, p, ch["project_id"]):
         return ch
     if p.role == "monitor" and not write:
         scoped = db.one("SELECT 1 AS x FROM project_members WHERE agent_id = ?", (p.agent_id,))

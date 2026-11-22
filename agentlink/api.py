@@ -19,6 +19,7 @@ from starlette.routing import Route
 from . import (
     __version__,
     archive,
+    board,
     coordination,
     coordinator,
     delivery,
@@ -339,6 +340,8 @@ routes = [
     # events & read model
     Route("/api/events", polled(lambda h, p, r: events.list_events(h.db, p, q(r)))),
     Route("/api/office/snapshot", R(lambda h, p, r, b: office.snapshot(h.db, p, q(r), h.settings))),
+    Route("/api/board/projects", R(lambda h, p, r, b: board.admin_projects(h.db, p))),
+    Route("/api/board", R(lambda h, p, r, b: board.board(h.db, p, q(r), h.settings))),
     Route("/api/office/building", R(lambda h, p, r, b: office.building(h.settings))),
     Route("/api/ws-ticket", W(lambda h, p, r, b: issue_ticket(p)), methods=["POST"]),
     Route("/api/channels/{ch}/leases", R(lambda h, p, r, b: coordination.list_leases(h.db, p, path(r, "ch")))),
