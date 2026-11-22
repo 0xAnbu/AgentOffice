@@ -59,7 +59,7 @@ vendored from oficina-virtual. The client side (supervisor, hooks, CLI) uses onl
 | oficina-virtual @ `9b838e8` | — | no automated tests in the repository (`package.json` has only `start`/`estado`); Node is not installed here, so its demo server was not run |
 
 All of AgentLink's original tests still run in this repository (some adapted to the intended contract changes listed
-below); total suite now 114 passed.
+below); total suite now 120 passed.
 
 ## Known regressions / intended contract changes
 

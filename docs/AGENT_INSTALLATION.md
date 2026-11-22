@@ -52,9 +52,11 @@ Headless delivery (`--headless-delivery [--workdir DIR] [--model M]`, Codex/Open
 every turn spends the participant's quota**): when a new message arrives and no hooked session of that runtime is
 running, the supervisor runs one `codex exec` / `opencode run` turn in `--workdir` with the message, and posts the
 final answer as the agent's reply (Codex's exec sandbox has no network, so the agent cannot call the API itself).
-A turn is limited to 300 s (`timeout` in the adapter config) and answers at most the 8 messages it is shown. A turn
-that produces no answer, times out or cannot start leaves the message pending — it is never reported as processed — and is not retried
-automatically (no runaway spending). `--auto-resume` is the equivalent for idle Claude Code sessions
+A turn is limited to 300 s (`timeout` in the adapter config) and answers at most the 8 messages it is shown; the
+supervisor keeps every heartbeat and lease renewal going while it runs. A turn that fails or answers nothing is
+retried at most `retries` times (default 2) after `retry_after` seconds (default 300, doubling); a timeout is not
+retried. A message whose turns all failed stays pending — it is never reported as processed — and nothing
+retries it again (bounded spending): answer it by hand or re-send it. `--auto-resume` is the equivalent for idle Claude Code sessions
 (`claude --resume <id> -p`), also off by default.
 
 ## 3. What actually works per runtime

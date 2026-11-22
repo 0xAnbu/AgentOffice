@@ -39,7 +39,8 @@ Start with: `agentlink status` and `agentlink doctor` on the participant's machi
 | `delivered_to_supervisor` | no runtime session has reached a safe point (runtime closed or mid-tool). Opt-in resume/headless delivery, or the human opens the runtime |
 | `injected_to_runtime` | the model saw it but did not ack/answer. Urgent ones raise `delivery.overdue` after 15 min |
 
-Headless delivery never retries a message automatically; re-send it or answer by hand.
+Headless delivery retries a failed turn at most twice (configurable, growing delays) and never retries a timeout;
+after that the message stays pending: re-send it or answer by hand.
 
 ## "refusing plain http" / "server redirected … not followed"
 

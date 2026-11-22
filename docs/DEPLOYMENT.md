@@ -4,7 +4,7 @@ One backend instance, SQLite on local disk, systemd, private HTTPS through Tails
 Healthchecks.io. No Docker, no public port, no domain.
 
 > **Verification status.** The scripts and units below were verified on Linux x86_64 (Kali, systemd 262,
-> Python 3.14) under `systemd --user` with `deployment/verify.sh` (18/18 checks, log in
+> Python 3.14) under `systemd --user` with `deployment/verify.sh` (20/20 checks, log in
 > `docs/evidence/deployment-verify-*.log`) and by CI. They have **not** yet been run on a Raspberry Pi, and Tailscale
 > Serve and a real Healthchecks.io check have not been configured end-to-end. See the checklist at the end.
 
@@ -92,9 +92,11 @@ Backups use the SQLite online backup API (consistent while the service writes), 
 Pi too (e.g. `rsync` to a participant's machine over Tailscale): a backup on the same SD card does not survive the SD
 card.
 
-Restore verifies checksum, integrity and schema compatibility **before** stopping anything, moves the current
-database (and `-wal`/`-shm`) to `/var/lib/agent-office/replaced-<ts>/`, starts the service and waits for the deep
-health check. To verify a backup without restoring:
+Restore verifies checksum, integrity and schema compatibility **before** stopping anything, refuses to continue if
+the service cannot be stopped, moves the current database (and `-wal`/`-shm`) to
+`/var/lib/agent-office/replaced-<ts>/`, starts the service and waits for the deep health check. If the restored
+database leaves the service unhealthy, the previous one is put back automatically (the restored copy is kept in
+`failed-restore-<ts>/`). To verify a backup without restoring:
 `gzip -dc file.db.gz > /tmp/x.db && sqlite3 /tmp/x.db 'PRAGMA integrity_check; SELECT MAX(version) FROM schema_version;'`.
 
 ## Update and rollback
@@ -127,12 +129,13 @@ are kept.
 active, secrets mode, auth (no token / wrong token / admin), loopback-only binding, persistence across restart,
 automatic restart after SIGKILL, no data loss after the crash, backup under concurrent writes, restore, the
 health-check unit sending exactly one heartbeat when healthy and **none** when the app is down, timers installed,
-update, manual rollback and automatic rollback of a broken release.
+restore refused when the service cannot be stopped, automatic rollback of a restore that leaves the service
+unhealthy, update, manual rollback and automatic rollback of a broken release.
 
 ### Raspberry Pi acceptance checklist (pending — needs the hardware)
 
 - [ ] `install.sh` on Raspberry Pi OS 64-bit; record `uname -a`, `python3 --version`, `sqlite3 --version`.
-- [ ] `deployment/verify.sh` on the Pi (18/18).
+- [ ] `deployment/verify.sh` on the Pi (20/20).
 - [ ] Reboot the Pi → service and timers come back; data persists.
 - [ ] Tailscale Serve: HTTPS from two participant laptops; `curl` from outside the tailnet fails.
 - [ ] Healthchecks.io: green when healthy; stop the service → alert e-mail received after the grace period.

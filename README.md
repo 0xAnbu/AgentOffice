@@ -58,7 +58,7 @@ agentlink connect --server http://127.0.0.1:8080 --token <agent token> --project
 
 **Verified:**
 
-- 114 automated tests, including a five-participant end-to-end lifecycle and the 18 scenarios of the spec.
+- 120 automated tests, including a five-participant end-to-end lifecycle and the 18 scenarios of the spec.
 - Smoke test.
 - Real runs of Claude Code, Codex and OpenCode, including a Claude Code ↔ Codex round trip.
 - Headless-browser checks of both dashboards, including WebSocket loss and recovery.

@@ -108,4 +108,8 @@ else the fallback). On each floor, each owner gets a room; each session gets a d
 - Logs: journald (`journalctl -u agent-office`). Health: `/api/health` (process) and `/api/health?deep=1`
   (SQLite read/write + reconciler heartbeat; 503 otherwise).
 - Inherited from AgentLink and **not** part of the supported Agent Office deployment: the Postgres/serverless mode
-  (not verified with schema v2) and the Vercel deployment (removed).
+  (not verified with schema v2) and the Vercel deployment (removed). The correctness of claims, fencing, elections,
+  dependency checks, path leases, delivery states and cursors relies on SQLite's single serialised writer
+  (`BEGIN IMMEDIATE`). Two reviews listed what would have to change before supporting PostgreSQL or several
+  instances: conditional `UPDATE`s re-checking epoch/version, a consistent lock order between session and task
+  updates, cursors that tolerate out-of-order commits, and serialised path-lease and dependency checks.

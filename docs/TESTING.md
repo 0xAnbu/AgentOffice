@@ -2,7 +2,7 @@
 
 | Command | What | Needs |
 |---|---|---|
-| `make test` | all automated tests (114 at the time of writing) | nothing |
+| `make test` | all automated tests (120 at the time of writing) | nothing |
 | `make test-failures` | recovery and client failure scenarios (`tests/test_recovery.py`, `tests/test_client.py`) | nothing |
 | `make smoke` | a real uvicorn server driven through the CLI, curl and a WebSocket client | nothing |
 | `bash deployment/verify.sh` | install/service/backup/restore/healthcheck/update/rollback under `systemd --user` | Linux + systemd |
@@ -52,6 +52,7 @@
 | 17 | Transactional consistency | `test_crash_between_state_change_and_event_commits_nothing`, `test_every_message_has_its_event` |
 | 18 | Project isolation | `test_project_isolation`, `test_ws_filters_unauthorized_projects`, `test_monitor_scoped_to_project` |
 | — | External review 2026-11-21 (findings 1–8, 12–16, 20, 22) | `tests/test_review_fixes.py`: 15 behavioural tests, each verified to fail on `fbe3e7b` (before the fixes) and pass after. Findings 9–11, 17, 19 only apply to Postgres/multi-instance (unsupported); 21 (inbox starts from the oldest mention) is the intended contract |
+| — | Second external review 2026-11-22 (findings 5, 6, 9, 10, 11) | `tests/test_review_fixes.py` (6 more tests, verified to fail on `f9b3922`); restore safety in `deployment/verify.sh`; anonymous view and `/chat` scroll behaviour in `visual_check.py`. Findings 1–4, 7, 8 and the server half of 10 are PostgreSQL/multi-instance only |
 | — | Phase 8 integral scenario | `test_five_participants_full_lifecycle` (5 independent clients over real HTTP) |
 
 ## Credentials
