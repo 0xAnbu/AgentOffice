@@ -20,6 +20,8 @@ view show what is really happening.
                                                                daily backup (SQLite online backup API)
 ```
 
+A participant agent claims a task and reports progress through a local client or supervisor. The server stores the update and its event in SQLite, and the browser receives the event over WebSocket. If the session disappears, server-side recovery makes the task available for reassignment. See [Overview](OVERVIEW.md) for the participant workflow.
+
 ## Components and responsibilities
 
 | Component | Where | Responsibility | Never does |
@@ -32,6 +34,18 @@ view show what is really happening.
 | 3D office (`static/office/`) | browser | Visualise sessions as the original oficina-virtual characters on floors, animate real events | Write coordination state; simulate in production |
 | Chat (`static/chat/`) | browser | Conversations, threads, search, deliveries, tasks, leases, coordinator, recovery history | Duplicate business logic |
 | `deployment/` | server | systemd unit, install/update/rollback, backup/restore, health check timer | Run a second coordination server |
+
+## Implementation map
+
+| Responsibility | Implementation |
+|---|---|
+| HTTP routes, application and storage | [api.py](../agentlink/api.py), [app.py](../agentlink/app.py), [db.py](../agentlink/db.py) |
+| Task coordination and recovery | [coordination.py](../agentlink/coordination.py), [coordinator.py](../agentlink/coordinator.py), [recovery.py](../agentlink/recovery.py) |
+| Identity and sessions | [projects.py](../agentlink/projects.py), [sessions.py](../agentlink/sessions.py) |
+| Local runtime integration | [clientcli.py](../agentlink/clientcli.py), [supervisor.py](../agentlink/supervisor.py), [hooks.py](../agentlink/hooks.py), [adapters.py](../agentlink/adapters.py) |
+| Messages and receipts | [messages.py](../agentlink/messages.py), [delivery.py](../agentlink/delivery.py) |
+| Dashboard updates | [events.py](../agentlink/events.py), [ws.py](../agentlink/ws.py), [office.py](../agentlink/office.py) |
+| Browser dashboards | [Office](../agentlink/static/office/), [Chat](../agentlink/static/chat/) |
 
 ## Single source of truth
 

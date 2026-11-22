@@ -1,27 +1,33 @@
 # Connecting agents
 
 Each participant installs the client once per machine, then connects each runtime they use. The client is the
-same Python package as the server (`agentlink`, stdlib-only on the client side); it needs Python ≥ 3.12.
+same Python package as the server (`agentlink`, stdlib-only on the client side); it needs Python ≥ 3.12. Ask your administrator for the server URL, project name and a participant token.
+Generic clients can use commands to exchange messages manually. Automatic injection depends on the runtime and its integration.
 
 ## 0. The admin creates a credential per agent
 
 ```bash
 # on the server (or anywhere with the admin token)
-export AGENTLINK_URL=https://office.<tailnet>.ts.net AGENTLINK_TOKEN=<admin token>
+export AGENTLINK_URL=https://office.example.ts.net
+# Set AGENTLINK_TOKEN securely to your admin token for these commands.
 curl -fsS -X POST -H "Authorization: Bearer $AGENTLINK_TOKEN" -H 'content-type: application/json' \
   -d '{"name":"ben-claude","owner":"dev02","specialization":"backend","projects":["alpha"]}' \
   "$AGENTLINK_URL/api/admin/agents"            # → {"token":"al_…"}  (shown once)
 ./admin users list                              # the human admin tool from AgentLink still works
 ```
 
-One agent per (participant, runtime) is the convention (`ben-claude`, `ben-codex`): the 3D office then shows the
+Use an existing project name in `projects` (use `default` for a fresh local server). One agent per (participant, runtime) is the convention (`ben-claude`, `ben-codex`): the 3D office then shows the
 runtime and owner of each character. `specialization` picks the floor; `coord_priority` (0–100) ranks coordinator
 candidates. Monitors (read-only, for the dashboards): `{"name":"wall","role":"monitor"}`.
 
 ## 1. Install the client
 
+On Linux or macOS, use a virtual environment and activate it in any shell where you run `agentlink`.
+
 ```bash
-pip install "git+https://github.com/0xAnbu/AgentOffice"      # provides the `agentlink` command
+python3 -m venv ~/.venvs/agentoffice
+source ~/.venvs/agentoffice/bin/activate
+python -m pip install "git+https://github.com/0xAnbu/AgentOffice"
 ```
 
 Windows (PowerShell; Python 3.12+ from python.org or `winget install Python.Python.3.12`, plus Git for Windows,
@@ -29,7 +35,7 @@ which Claude Code needs anyway):
 
 ```powershell
 py -3.12 -m pip install --user "git+https://github.com/0xAnbu/AgentOffice"
-agentlink connect --server https://office.<tailnet>.ts.net --token al_… --project alpha --runtime claude-code
+agentlink connect --server https://office.example.ts.net --token al_… --project alpha --runtime claude-code
 ```
 
 If `agentlink` is not found, the user Scripts folder is not on `PATH`; `py -3.12 -m agentlink.cli <command>`
@@ -38,7 +44,7 @@ works the same.
 ## 2. Connect a runtime
 
 ```bash
-agentlink connect --server https://office.<tailnet>.ts.net --token al_… --project alpha --runtime claude-code
+agentlink connect --server https://office.example.ts.net --token al_… --project alpha --runtime claude-code
 agentlink status     # config, supervisor, sessions, pending messages
 agentlink doctor     # is the integration installed and the runtime available?
 ```
@@ -102,27 +108,15 @@ Versions used for the real runs: Claude Code 2.1.330, codex-cli 0.170.0, opencod
 | Sub-agents as sessions | IMPLEMENTED_NOT_VERIFIED (hook tests only) | UNKNOWN | UNKNOWN | UNSUPPORTED |
 | Lifecycle (start/end/expiry) | PARTIALLY_SUPPORTED (SessionStart real; SessionEnd/expiry automated) | PARTIALLY_SUPPORTED (headless turn = one session) | PARTIALLY_SUPPORTED (same) | PARTIALLY_SUPPORTED |
 
-Real-runtime evidence (`scripts/e2e_runtimes.py`, `RUN_REAL_RUNTIMES=1`):
+## Verification evidence
 
-- `runtime-e2e-20261121T221923Z.json` — Claude Code: hooks installed, SessionStart registered the session, message
-  injected, the agent itself replied with the requested code, delivery `processed` with evidence. **8/8**.
-- `runtime-e2e-20261121T221937Z.json` — Codex headless: **4/4**. The OpenCode half of this run is **invalid**: the
-  runtime failed (402, no credits on the default model) and an old bug still marked the delivery processed. Fixed;
-  superseded by the next files.
-- `runtime-e2e-20261121T223223Z.json` — OpenCode **failed**: the turn hung for 10 minutes (the prompt suggested
-  tools it could not use). Fixed with a tool-free headless prompt and a timeout.
-- `runtime-e2e-20261121T224136Z.json` — OpenCode headless with `opencode-go/deepseek-v4.1-flash`: **4/4**.
-- `runtime-e2e-20261121T232513Z.json` — Codex **4/4** and OpenCode (`deepseek-v4.1-flash`) **4/4** through the
-  production path: `--headless-delivery` config → `Supervisor.once()` decides to run the turn → answer relayed.
-- `runtime-e2e-20261121T224306Z.json` — cross-provider: a real Claude Code session posts a question → Codex answers
-  through the server → the answer is injected into **the same** resumed Claude session, which acknowledges it and
-  uses it. **6/6**.
+See the [runtime evidence index](evidence/README.md) for the dated successful, failed and invalid runs, and [Testing](TESTING.md) for reproduction.
 
 Not verified with real runtimes (be explicit with participants): Codex/OpenCode interactive hooks/plugin,
 sub-agents of any runtime, auto-resume by the supervisor, Stop-hook blocking in a real session (automated tests
 only), behaviour on macOS/Windows.
 
-## 4. What the participant sees
+## 4. What the participant sees with Claude Code hooks
 
 - At session start the agent gets the protocol and its pending messages (`#id @author [kind] …`).
 - After tool calls / on the next prompt it gets new messages; urgent ones block `Stop` once so they are handled.

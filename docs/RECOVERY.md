@@ -35,7 +35,7 @@ keep a lease alive").
 
 `registered → idle | executing | waiting` (reported) and derived by the server: `stalled` (executing without
 progress), `offline` (heartbeat older than TTL), `terminated` (ended). Precedence: terminated > offline > stalled >
-reported.
+reported. After the heartbeat TTL elapses, the derived state is `offline` until the reconciler ends the session. It then becomes `terminated`, with `end_reason: expired` and a `session.expired` event.
 
 ## Task states and transitions
 

@@ -1,10 +1,10 @@
 # Phase acceptance reports
 
-Format of INSTRUCTIONS §20.5. All results below were produced by commands run on 2026-11-21/22 on Linux x86_64
+This historical record lists the tested revision, commands, evidence, regressions, limitations and acceptance decision per phase. The runs took place on 2026-11-21/22 on Linux x86_64
 (Kali, Python 3.14.8, systemd 262); code verified at commit `183fec1`, documentation at `e995421`. Nothing here is
 assumed: anything not executed is listed as pending. Raw outputs are in `docs/evidence/` (see its README).
 
-Summary:
+## Acceptance summary
 
 | Phase | Status |
 |---|---|
@@ -17,7 +17,9 @@ Summary:
 | 7 — Raspberry Pi deployment | **CONDITIONAL** |
 | 8 — Integral validation | **CONDITIONAL** |
 
-The project is **not** declared finished (§20.7 requires every phase PASSED and a verified Raspberry Pi deployment).
+Final acceptance requires every phase to pass and a verified deployment on Raspberry Pi. At the recorded revision, several phases were conditional and the target deployment was pending.
+
+## Phase records
 
 ```yaml
 phase:
