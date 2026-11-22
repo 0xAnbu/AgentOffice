@@ -1,6 +1,6 @@
 """Real-runtime integration test (INSTRUCTIONS §15 Test 14). EXPLICIT OPT-IN: spends real quota.
 
-    RUN_REAL_RUNTIMES=1 python scripts/e2e_runtimes.py [--only claude,codex,opencode,cross] [--keep]
+    RUN_REAL_RUNTIMES=1 python scripts/e2e_runtimes.py [--only claude,codex,codex-timeout,opencode,cross] [--keep]
 
 Starts a private Agent Office server on localhost with a throw-away database, creates a project with one
 agent per runtime, and records — step by step — how far each message really got:
@@ -230,6 +230,29 @@ def scenario_headless(env: Env, sender: Api, runtime: str, name: str) -> bool:
     return ok and st["state"] == "processed"
 
 
+def scenario_codex_timeout(env: Env, sender: Api) -> bool:
+    """A real Codex turn cut by a 1 s timeout: the supervisor survives and the message stays pending (never processed)."""
+    p = env.participant("rt-codex", "codex")
+    p["store"].put("adapter.codex", {"headless": True, "workdir": str(p["ws"]), "timeout": 1})
+    p["sup"].cfg["runtime"] = "codex"
+    m = sender.call("POST", "/api/channels/e2e-dev/messages",
+                    {"body": "@rt-codex Write a 2000-word essay about distributed consensus."})  # fmt: skip
+    try:
+        res = p["sup"].once(wait=0)["headless"] or {}
+        survived = True
+    except Exception as e:  # the regression this scenario guards against
+        res, survived = {"error": repr(e)}, False
+    EVIDENCE["results"]["codex_timeout"] = res
+    step("codex-timeout: supervisor iteration survived the timeout", survived)
+    step("codex-timeout: turn reported as timed out", res.get("exit_code") == 124, exit_code=res.get("exit_code"),
+         seconds=res.get("seconds"))  # fmt: skip
+    st = env.delivery(m["id"])[0]
+    step("codex-timeout: message pending, not processed", st["state"] == "injected_to_runtime", delivery=st)
+    again = p["sup"].once(wait=0)
+    step("codex-timeout: next iteration runs normally (no retry storm)", again.get("headless") is None)
+    return survived and res.get("exit_code") == 124 and st["state"] == "injected_to_runtime"
+
+
 def scenario_cross(env: Env) -> bool:
     c = env.participant("x-claude", "claude-code")
     x = env.participant("x-codex", "codex")
@@ -290,6 +313,7 @@ def main() -> None:
     EVIDENCE["runtimes"] = {n: ADAPTERS[n].detect() for n in ("claude-code", "codex", "opencode")}
     try:
         env.agent("synthetic-sender", "coordination", "dev00")
+        env.agent("rt-codex", "backend", "dev06")
         for name, spec, owner in (("rc-claude", "backend", "dev01"), ("rx-codex", "backend", "dev02"),
                                   ("ro-opencode", "frontend", "dev03"), ("x-claude", "coordination", "dev04"),
                                   ("x-codex", "backend", "dev05")):  # fmt: skip
@@ -301,6 +325,8 @@ def main() -> None:
             results["claude-code"] = scenario_claude(env, sender)
         if "codex" in only:
             results["codex"] = scenario_headless(env, sender, "codex", "rx-codex")
+        if "codex-timeout" in only:
+            results["codex-timeout"] = scenario_codex_timeout(env, sender)
         if "opencode" in only:
             results["opencode"] = scenario_headless(env, sender, "opencode", "ro-opencode")
         if "cross" in only:
