@@ -15,17 +15,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import platform
 import shutil
+import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any, NoReturn
+from xml.sax.saxutils import escape as xml_escape
 
 from .adapters import ADAPTERS, detect_runtime
 from .local import VERSION, Api, ApiError, Store, api_from_config, home, load_config, save_config
+from .oscmd import IS_WINDOWS, TASK_NAME, agentlink_argv, systemd_quote, task_xml, windowless, windows_user
 
 COMMANDS = {
     "connect", "disconnect", "status", "doctor", "supervise", "hook", "install", "uninstall", "ack", "reply", "show",
@@ -75,18 +79,27 @@ Description=Agent Office local supervisor (agentlink)
 After=network-online.target
 
 [Service]
-ExecStart={exe} supervise
+ExecStart={exec_start}
 Restart=always
 RestartSec=5
-Environment=AGENTLINK_HOME={home}
+Environment={env}
 
 [Install]
 WantedBy=default.target
 """
+TASK_XML = "supervisor-task.xml"
 
 
-def _exe() -> str:
-    return shutil.which("agentlink") or f"{sys.executable} -m agentlink.cli"
+def _supervise_argv(base: list[str] | None = None) -> list[str]:
+    """`agentlink supervise` as an argument list; a non-default AGENTLINK_HOME travels as `--home`."""
+    argv = [*(base or agentlink_argv()), "supervise"]
+    if os.environ.get("AGENTLINK_HOME"):
+        argv += ["--home", str(home())]
+    return argv
+
+
+def _quiet(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
 def install_service() -> dict[str, Any]:
@@ -95,23 +108,35 @@ def install_service() -> dict[str, Any]:
     if system == "Linux" and shutil.which("systemctl"):
         unit = Path.home() / ".config" / "systemd" / "user" / "agentlink-supervisor.service"
         unit.parent.mkdir(parents=True, exist_ok=True)
-        unit.write_text(UNIT.format(exe=_exe(), home=home()), "utf-8")
-        r = subprocess.run(["systemctl", "--user", "enable", "--now", "agentlink-supervisor.service"],
-                           capture_output=True, text=True, check=False)  # fmt: skip
-        if r.returncode == 0:
+        exec_start = systemd_quote([*agentlink_argv(), "supervise"])
+        unit.write_text(UNIT.format(exec_start=exec_start, env=systemd_quote([f"AGENTLINK_HOME={home()}"])), "utf-8")
+        if _quiet(["systemctl", "--user", "enable", "--now", "agentlink-supervisor.service"]).returncode == 0:
             return {"mechanism": "systemd --user", "unit": str(unit)}
     if system == "Darwin":
         plist = Path.home() / "Library" / "LaunchAgents" / "dev.agentoffice.supervisor.plist"
         plist.parent.mkdir(parents=True, exist_ok=True)
-        args = "".join(f"<string>{x}</string>" for x in [*_exe().split(), "supervise"])
+        args = "".join(f"<string>{xml_escape(x)}</string>" for x in _supervise_argv())
         plist.write_text(f"""<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>Label</key>
 <string>dev.agentoffice.supervisor</string><key>ProgramArguments</key><array>{args}</array><key>RunAtLoad</key><true/>
 <key>KeepAlive</key><true/></dict></plist>""", "utf-8")  # fmt: skip
         subprocess.run(["launchctl", "load", "-w", str(plist)], check=False)
         return {"mechanism": "launchd", "plist": str(plist)}
-    # Windows or no service manager: a detached background process (documented: re-run at login via Task Scheduler)
+    if system == "Windows" and shutil.which("schtasks"):
+        # a per-user task: no admin rights, starts at logon, restarted by Task Scheduler if it fails
+        xml = home() / TASK_XML
+        xml.write_text(task_xml(_supervise_argv(windowless(agentlink_argv())), windows_user()), encoding="utf-16")
+        r = _quiet(["schtasks", "/Create", "/TN", TASK_NAME, "/XML", str(xml), "/F"])
+        if r.returncode == 0:
+            _quiet(["schtasks", "/Run", "/TN", TASK_NAME])
+            return {"mechanism": "Task Scheduler", "task": TASK_NAME}
+        xml.unlink(missing_ok=True)
+    # no service manager (or it refused): a detached background process, not restarted after a reboot
     logf = open(home() / "supervisor.log", "a")  # noqa: SIM115
-    p = subprocess.Popen([*_exe().split(), "supervise"], stdout=logf, stderr=logf, start_new_session=True)
+    if IS_WINDOWS:  # start_new_session means nothing on Windows; without these flags it dies with the console
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0x8) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200)
+        p = subprocess.Popen(_supervise_argv(), stdout=logf, stderr=logf, stdin=subprocess.DEVNULL, creationflags=flags)
+    else:
+        p = subprocess.Popen(_supervise_argv(), stdout=logf, stderr=logf, start_new_session=True)
     (home() / "supervisor.pid").write_text(str(p.pid))
     return {
         "mechanism": "detached process",
@@ -124,11 +149,7 @@ def remove_service() -> dict[str, Any]:
     removed = []
     unit = Path.home() / ".config" / "systemd" / "user" / "agentlink-supervisor.service"
     if unit.exists():
-        subprocess.run(
-            ["systemctl", "--user", "disable", "--now", "agentlink-supervisor.service"],
-            capture_output=True,
-            check=False,
-        )
+        _quiet(["systemctl", "--user", "disable", "--now", "agentlink-supervisor.service"])
         unit.unlink()
         removed.append(str(unit))
     plist = Path.home() / "Library" / "LaunchAgents" / "dev.agentoffice.supervisor.plist"
@@ -136,10 +157,15 @@ def remove_service() -> dict[str, Any]:
         subprocess.run(["launchctl", "unload", "-w", str(plist)], check=False)
         plist.unlink()
         removed.append(str(plist))
+    if IS_WINDOWS and shutil.which("schtasks") and _quiet(["schtasks", "/Query", "/TN", TASK_NAME]).returncode == 0:
+        _quiet(["schtasks", "/End", "/TN", TASK_NAME])
+        _quiet(["schtasks", "/Delete", "/TN", TASK_NAME, "/F"])
+        removed.append(f"task {TASK_NAME}")
+    (home() / TASK_XML).unlink(missing_ok=True)
     pid = home() / "supervisor.pid"
     if pid.exists():
         try:
-            os.kill(int(pid.read_text()), 15)
+            os.kill(int(pid.read_text()), signal.SIGTERM)
         except (OSError, ValueError):
             pass
         pid.unlink()
@@ -264,6 +290,11 @@ def cmd_doctor(a: argparse.Namespace) -> None:
 def cmd_supervise(a: argparse.Namespace) -> None:
     from .supervisor import Supervisor
 
+    if a.home:  # the service manager cannot always pass environment variables (Task Scheduler, launchd)
+        os.environ["AGENTLINK_HOME"] = a.home
+    if sys.stdout is None or sys.stderr is None:  # pythonw.exe (Windows task): no console, log to a file
+        sys.stdout = sys.stderr = open(home() / "supervisor.log", "a", encoding="utf-8", buffering=1)  # noqa: SIM115
+        logging.basicConfig(stream=sys.stderr, level=logging.INFO)
     cfg = load_config()
     sup = Supervisor(api_from_config(cfg), Store(), cfg, poll_wait=a.wait)
     if a.once:
@@ -471,6 +502,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sp.add_parser("supervise")
     p.add_argument("--once", action="store_true")
     p.add_argument("--wait", type=int, default=20)
+    p.add_argument("--home", help="AGENTLINK_HOME for this supervisor (set by the installed service)")
     p = sp.add_parser("hook")
     p.add_argument("runtime")
     p.add_argument("event")

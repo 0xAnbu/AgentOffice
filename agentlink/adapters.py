@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -25,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from .local import Store, _private_dir, home
+from .oscmd import agentlink_argv, batch_shim, js_array, shell_command
 
 CAPABILITIES = (
     "observation",
@@ -40,14 +42,13 @@ HOOK_MARK = "agentlink hook"  # marker in files we own (plugins)
 
 
 def ours(command: str) -> bool:
-    """A hook command installed by us (`agentlink hook ...` or `python -m agentlink.cli hook ...`)."""
-    return "agentlink" in command and " hook " in command
+    """A hook command installed by us (`agentlink hook ...` or `python -m agentlink.cli hook ...`), quoted or not."""
+    return "agentlink" in command and re.search(r'(^|\s)"?hook"?\s', command) is not None
 
 
 def _bin() -> str:
-    """Command that runs this package's CLI (works from a venv, pipx or a checkout)."""
-    exe = shutil.which("agentlink")
-    return exe or f"{os.sys.executable} -m agentlink.cli"  # type: ignore[attr-defined]
+    """Hook command prefix, quoted for the shell the runtime hands it to (paths may contain spaces)."""
+    return shell_command(agentlink_argv())
 
 
 def _backup(path: Path) -> Path | None:
@@ -57,6 +58,18 @@ def _backup(path: Path) -> Path | None:
     dst = d / f"{path.name}.{int(time.time())}.bak"
     shutil.copy2(path, dst)
     return dst
+
+
+def _without_ours(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Hook entries with our commands removed (entries left empty disappear)."""
+    keep = []
+    for e in entries:
+        hs = [h for h in e.get("hooks", []) if not ours(h.get("command", ""))]
+        if len(hs) == len(e.get("hooks", [])):
+            keep.append(e)
+        elif hs:
+            keep.append({**e, "hooks": hs})
+    return keep
 
 
 def _version(cmd: list[str]) -> str | None:
@@ -155,8 +168,12 @@ class ClaudeCode(Adapter):
         added = []
         for ev, entries in self._entries().items():
             cur = hooks.setdefault(ev, [])
-            if any(ours(h.get("command", "")) for e in cur for h in e.get("hooks", [])):
-                continue  # already installed: never duplicate, never overwrite someone else's hooks
+            mine = [h.get("command") for e in cur for h in e.get("hooks", []) if ours(h.get("command", ""))]
+            if mine == [entries[0]["hooks"][0]["command"]]:
+                continue  # already installed as is: never duplicate
+            # replace only our own entries (an older install may hold an unquoted, broken command);
+            # someone else's hooks are never touched
+            hooks[ev] = cur = _without_ours(cur)
             cur.extend(entries)
             added.append(ev)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -171,13 +188,9 @@ class ClaudeCode(Adapter):
         _backup(path)
         removed = []
         for ev, entries in list((data.get("hooks") or {}).items()):
-            keep = []
-            for e in entries:
-                hs = [h for h in e.get("hooks", []) if not ours(h.get("command", ""))]
-                if len(hs) != len(e.get("hooks", [])):
-                    removed.append(ev)
-                if hs:
-                    keep.append({**e, "hooks": hs})
+            keep = _without_ours(entries)
+            if keep != entries:
+                removed.append(ev)
             if keep:
                 data["hooks"][ev] = keep
             else:
@@ -201,6 +214,8 @@ class ClaudeCode(Adapter):
         cfg = store.get("adapter.claude-code", {}) or {}
         if not cfg.get("auto_resume") or not session.get("local_id"):
             return None
+        if batch_shim(self.binary or "claude"):
+            return None  # cmd.exe would re-parse the message text (see oscmd.batch_shim)
         try:
             subprocess.Popen(
                 [self.binary or "claude", "--resume", session["local_id"], "-p", text],
@@ -274,7 +289,7 @@ class OpenCode(Adapter):
         if path.exists() and HOOK_MARK not in path.read_text("utf-8"):
             return {"runtime": self.runtime, "error": f"{path} exists and is not ours; not overwriting"}
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(OPENCODE_PLUGIN.replace("__AGENTLINK__", _bin()), "utf-8")
+        path.write_text(OPENCODE_PLUGIN.replace("__AGENTLINK__", js_array(agentlink_argv())), "utf-8")
         return {"runtime": self.runtime, "file": str(path), "added": ["plugin"]}
 
     def uninstall(self, scope: str = "user", directory: str | None = None) -> dict[str, Any]:
@@ -328,10 +343,14 @@ OPENCODE_PLUGIN = """// agentlink hook: Agent Office plugin for OpenCode (instal
 // Reports observable activity to the local Agent Office supervisor. It never sends anything to a model provider.
 import { spawn } from "node:child_process";
 
+const AGENTLINK = __AGENTLINK__;  // the agentlink command as an argument list: no shell on any OS
+
 const report = (event, sessionID, detail = "") => {
   try {
-    const p = spawn("sh", ["-c", `__AGENTLINK__ activity --runtime opencode --local-id "$0" --kind "$1" --detail "$2"`,
-      String(sessionID || ""), event, String(detail).slice(0, 200)], { stdio: "ignore", detached: true });
+    const p = spawn(AGENTLINK[0], [...AGENTLINK.slice(1), "activity", "--runtime", "opencode",
+      "--local-id", String(sessionID || ""), "--kind", event, "--detail", String(detail).slice(0, 200)],
+      { stdio: "ignore", detached: true, windowsHide: true });
+    p.on("error", () => {});
     p.unref();
   } catch { /* the supervisor is optional for the runtime: never break the agent */ }
 };

@@ -1,6 +1,6 @@
 """Client-side state for the local supervisor and the runtime hooks (standard library only).
 
-Everything lives in ``$AGENTLINK_HOME`` (default ``~/.agentlink``), mode 0700:
+Everything lives in ``$AGENTLINK_HOME`` (default ``~/.agentlink``), mode 0700 (on Windows an owner-only ACL):
 
     config.json   server URL, the participant's own agent token (file mode 0600), project, device name
     state.db      SQLite: inbox (persisted *before* it is acknowledged to the server), cursors, local
@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from .cli import OPENER, check_server_url
+from .oscmd import IS_WINDOWS, restrict_to_user
 
 VERSION = "1.0.0"
 
@@ -36,6 +37,11 @@ def home() -> Path:
 
 def _private_dir(p: Path) -> Path:
     """Create (or tighten) a directory only the user can enter: config, tokens and message bodies live here."""
+    if IS_WINDOWS:  # chmod means nothing there: an ACL, set once when created (save_config re-applies it)
+        if not p.exists():
+            p.mkdir(parents=True)
+            restrict_to_user(p)
+        return p
     p.mkdir(parents=True, exist_ok=True, mode=0o700)
     if p.stat().st_mode & 0o077:
         p.chmod(0o700)  # mkdir's mode is ignored for existing directories and masked by the umask for new ones
@@ -67,6 +73,9 @@ def save_config(cfg: dict[str, Any]) -> Path:
     with os.fdopen(fd, "w") as fh:
         json.dump(cfg, fh, indent=2)
     os.replace(tmp, f)
+    if IS_WINDOWS:  # the token is in this file: owner-only ACL on the directory (inherited) and on the file
+        restrict_to_user(d)
+        restrict_to_user(f)
     return f
 
 

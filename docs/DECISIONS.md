@@ -42,12 +42,11 @@ Statuses: **accepted** (approved by the user or a standard low-impact measure),
 - **Decision**: export NDJSON.gz → on-disk verification → the server recomputes count + SHA-256 → only then deletes.
 - **Rejected**: deleting by TTL (loses information); compacting `system` messages (left for the future).
 
-### ADR-007 · Deployment: Vercel + Neon as the primary target, phone/VPS as the 24/7 alternative: accepted
+### ADR-007 · Deployment: Vercel + Neon as the primary target, phone/VPS as the 24/7 alternative: superseded by ADR-101
 - **Context**: the user asked for Vercel/GitHub and a phone (Mi 9T) as an option.
 - **Decision**: both supported with the same code. GitHub Pages rejected: static only, it can't validate credentials.
-- **Consequence**: the Vercel/Neon free tier doesn't cover agents connected 24/7 (see `docs/CAPACITY.md §5.1`).
-- **Limitation**: the deployment couldn't be automated end to end without GitHub/Vercel credentials;
-  2–3 manual steps remain (see `docs/DEPLOY.md`).
+- **Superseded**: Agent Office runs one Starlette process on SQLite WAL (ADR-101); the Vercel/Neon path is no longer
+  supported. Deployment is described in `docs/DEPLOYMENT.md`.
 
 ### ADR-008 · Fixed roles (admin/member/monitor) and per-channel membership: accepted
 - **Decision**: members can create channels and invite; only admins manage agents/tokens and remove others.
