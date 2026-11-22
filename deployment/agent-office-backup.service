@@ -1,0 +1,14 @@
+[Unit]
+Description=Agent Office consistent SQLite backup (online backup API)
+
+[Service]
+Type=oneshot
+User=agent-office
+Group=agent-office
+EnvironmentFile=/etc/agent-office/agent-office.env
+ExecStart=/opt/agent-office/current/deployment/backup.sh
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/agent-office /var/backups/agent-office

@@ -1,0 +1,75 @@
+{
+  "started": "2026-11-22T02:41:41.572849+00:00",
+  "steps": [
+    {
+      "step": "codex-timeout: supervisor iteration survived the timeout",
+      "ok": true,
+      "at": "2026-11-22T02:41:42.883424+00:00"
+    },
+    {
+      "step": "codex-timeout: turn reported as timed out",
+      "ok": true,
+      "at": "2026-11-22T02:41:42.883458+00:00",
+      "exit_code": 124,
+      "seconds": 1.0
+    },
+    {
+      "step": "codex-timeout: message pending, not processed",
+      "ok": true,
+      "at": "2026-11-22T02:41:42.884416+00:00",
+      "delivery": {
+        "agent": "rt-codex",
+        "state": "injected_to_runtime",
+        "session_id": "ses_2R5FOQ2mQZDDMDH6",
+        "evidence": {
+          "adapter": "codex",
+          "mechanism": "headless exec"
+        },
+        "updated_at": 1795315301873
+      }
+    },
+    {
+      "step": "codex-timeout: next iteration runs normally (no retry storm)",
+      "ok": true,
+      "at": "2026-11-22T02:41:42.887217+00:00"
+    }
+  ],
+  "results": {
+    "codex_timeout": {
+      "runtime": "codex",
+      "session_id": "ses_2R5FOQ2mQZDDMDH6",
+      "exit_code": 124,
+      "seconds": 1.0,
+      "answer": "",
+      "stderr_tail": "timed out after 1s",
+      "stdout_tail": ""
+    }
+  },
+  "runtimes": {
+    "claude-code": {
+      "runtime": "claude-code",
+      "available": true,
+      "version": "2.1.330 (Claude Code)"
+    },
+    "codex": {
+      "runtime": "codex",
+      "available": true,
+      "version": "codex-cli 0.171.0"
+    },
+    "opencode": {
+      "runtime": "opencode",
+      "available": true,
+      "version": "opencode v2.1.4"
+    }
+  },
+  "summary": {
+    "codex-timeout": true
+  },
+  "events": [
+    "project.created",
+    "message.created",
+    "session.registered",
+    "session.ended"
+  ],
+  "finished": "2026-11-22T02:41:42.888528+00:00"
+}

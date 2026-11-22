@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Agent Office isotype: an isometric cube (three rhombi). Original artwork for this project, MIT. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000">
+  <path fill="#e3e3e3" d="M500,60 L880,280 L500,500 L120,280 Z"/>
+  <path fill="#e3e3e3" d="M100,320 L480,540 L480,960 L100,740 Z"/>
+  <path fill="#e3e3e3" d="M900,320 L900,740 L520,960 L520,540 Z"/>
+</svg>

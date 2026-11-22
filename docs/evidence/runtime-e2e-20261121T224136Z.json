@@ -1,0 +1,78 @@
+{
+  "started": "2026-11-21T22:41:34.006727+00:00",
+  "steps": [
+    {
+      "step": "opencode: supervisor received and stored it",
+      "ok": true,
+      "at": "2026-11-21T22:41:34.312093+00:00"
+    },
+    {
+      "step": "opencode: runtime turn executed",
+      "ok": true,
+      "at": "2026-11-21T22:41:36.058826+00:00",
+      "seconds": 1.7,
+      "answer": "6 × 7 = **42**\n\nCode: **MAPLE-8EE3**"
+    },
+    {
+      "step": "opencode: answer relayed as reply authored by ro-opencode (contains 42 and code)",
+      "ok": true,
+      "at": "2026-11-21T22:41:36.061252+00:00"
+    },
+    {
+      "step": "opencode: delivery processed with reply evidence",
+      "ok": true,
+      "at": "2026-11-21T22:41:36.062681+00:00",
+      "delivery": {
+        "agent": "ro-opencode",
+        "state": "processed",
+        "session_id": "ses_WtEr-GxjcOsddhGn",
+        "evidence": {
+          "reply_message_id": 2,
+          "adapter": "opencode",
+          "mechanism": "opencode exec"
+        },
+        "updated_at": 1795300896056
+      }
+    }
+  ],
+  "results": {
+    "opencode_exec": {
+      "runtime": "opencode",
+      "session_id": "ses_WtEr-GxjcOsddhGn",
+      "exit_code": 0,
+      "seconds": 1.7,
+      "answer": "6 × 7 = **42**\n\nCode: **MAPLE-8EE3**",
+      "processed": [
+        1
+      ]
+    }
+  },
+  "runtimes": {
+    "claude-code": {
+      "runtime": "claude-code",
+      "available": true,
+      "version": "2.1.330 (Claude Code)"
+    },
+    "codex": {
+      "runtime": "codex",
+      "available": true,
+      "version": "codex-cli 0.170.0"
+    },
+    "opencode": {
+      "runtime": "opencode",
+      "available": true,
+      "version": "opencode v2.1.4"
+    }
+  },
+  "summary": {
+    "opencode": true
+  },
+  "events": [
+    "project.created",
+    "message.created",
+    "session.registered",
+    "message.created",
+    "session.ended"
+  ],
+  "finished": "2026-11-21T22:41:36.064101+00:00"
+}

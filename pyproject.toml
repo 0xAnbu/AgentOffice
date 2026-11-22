@@ -10,6 +10,7 @@ dependencies = [
   "starlette>=1.0,<2",
   "uvicorn>=0.30",
   "pg8000>=1.31",
+  "websockets>=13",
 ]
 
 [project.optional-dependencies]
@@ -28,7 +29,8 @@ build-backend = "setuptools.build_meta"
 packages = ["agentlink", "agentlink.static"]
 
 [tool.setuptools.package-data]
-"agentlink.static" = ["*.html", "*.js", "*.css", "*.md"]
+# Recursive: the 3D office (office/, vendor three.js, fonts, logos) and the chat (chat/).
+"agentlink.static" = ["*.html", "*.js", "*.css", "*.md", "**/*.html", "**/*.js", "**/*.css", "**/*.svg", "**/*.ttf", "**/*.txt", "**/*.json", "**/*.png", "**/*.woff2"]
 
 [tool.ruff]
 line-length = 120
@@ -41,13 +43,19 @@ ignore = [
   "S608",  # SQL built from fixed fragments only; values are always parameters
 ]
 
+[tool.ruff.lint.pycodestyle]
+# the formatter wraps at 120; hand-aligned "fmt: skip" blocks (SQL, emit calls) may reach 140
+max-line-length = 140
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S105", "S106", "S107", "S311"]
-"scripts/*" = ["S106", "S311"]
+"tests/*" = ["S105", "S106", "S107", "S311", "E501", "SIM117", "SIM105", "RUF059"]
+# client side: launches runtimes/services with fixed argv lists; best-effort calls deliberately swallow errors
+"agentlink/{adapters,clientcli,hooks,supervisor,local}.py" = ["S603", "S607", "SIM105", "RUF012", "E501"]
+"scripts/*" = ["S106", "S311", "S603", "S607", "E501"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["agentlink", "api"]
+files = ["agentlink"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 check_untyped_defs = true

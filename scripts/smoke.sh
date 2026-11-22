@@ -80,4 +80,36 @@ step "release lease, finish task"
 as "$BOB" release dev src/auth/ | jget '["released"]'
 as "$BOB" task-update "$TID" --status done --note "merged" | jget '["status"]'
 
+step "agent office: UI routes, deep health, session, snapshot, events, WebSocket, reconciler"
+for path in / /chat /office/oficina.js /static/chat/app.js; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$AGENTLINK_URL$path"); [ "$code" = 200 ] || { echo "$path -> $code"; exit 1; }
+done
+curl -fs "$AGENTLINK_URL/api/health?deep=1" | jget '["reconciler"]'
+api() { local t=$1 m=$2 u=$3; shift 3; curl -fs -X "$m" -H "Authorization: Bearer $t" -H 'content-type: application/json' "$@" "$AGENTLINK_URL$u"; }
+SID=$(api "$BOB" POST /api/sessions -d '{"runtime":"generic","specialization":"backend"}' | jget '["id"]')
+api "$BOB" POST "/api/sessions/$SID/heartbeat" -d '{"progress":true,"state":"executing"}' | jget '["status"]'
+api "$MON" GET /api/office/snapshot | jget '["building"]["floors"][0]["key"]'
+api "$MON" GET "/api/events?after=0&limit=5" | jget '["head"]'
+TICKET=$(api "$MON" POST /api/ws-ticket | jget '["ticket"]')
+$PY - "$AGENTLINK_URL" "$TICKET" <<'PYEOF'
+import asyncio, json, sys
+import websockets
+async def main(url, ticket):
+    async with websockets.connect(url.replace("http", "ws", 1) + f"/ws/events?ticket={ticket}&after=0") as ws:
+        hello = json.loads(await asyncio.wait_for(ws.recv(), 5))
+        assert hello["type"] == "hello", hello
+        msg = json.loads(await asyncio.wait_for(ws.recv(), 5))
+        assert msg["type"] in ("events", "resync"), msg
+        print("ws ok:", hello["type"], msg["type"], len(msg.get("events", [])), "events")
+    try:  # the ticket is single-use
+        async with websockets.connect(url.replace("http", "ws", 1) + f"/ws/events?ticket={ticket}") as ws:
+            await asyncio.wait_for(ws.recv(), 5)
+        raise SystemExit("ticket reuse was accepted")
+    except websockets.InvalidStatus as e:  # rejected before the upgrade
+        print("ticket reuse refused: HTTP", e.response.status_code)
+asyncio.run(main(*sys.argv[1:]))
+PYEOF
+api "$ADMIN" POST /api/admin/reconcile | $PY -c "import json,sys; print(sorted(json.load(sys.stdin))[:4])"
+api "$BOB" POST "/api/sessions/$SID/end" -d '{"reason":"smoke done"}' | jget '["sessions_ended"]'
+
 printf '\nSMOKE OK\n'

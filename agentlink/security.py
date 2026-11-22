@@ -21,8 +21,23 @@ from .errors import Forbidden, RateLimited, Unauthorized
 TOKEN_PREFIX = "al_"  # noqa: S105 - a prefix, not a secret
 
 
+_CLOCK_OFFSET_MS = 0  # test hook only: lets tests advance the server clock without sleeping
+
+
 def now_ms() -> int:
-    return int(time.time() * 1000)
+    """Server clock (epoch ms). Every TTL, lease and heartbeat is judged against this clock only."""
+    return int(time.time() * 1000) + _CLOCK_OFFSET_MS
+
+
+def advance_clock(seconds: float) -> None:
+    """Test hook: move the server clock forward. Never called by production code."""
+    global _CLOCK_OFFSET_MS
+    _CLOCK_OFFSET_MS += int(seconds * 1000)
+
+
+def reset_clock() -> None:
+    global _CLOCK_OFFSET_MS
+    _CLOCK_OFFSET_MS = 0
 
 
 def new_token() -> str:

@@ -1,0 +1,437 @@
+{
+  "url": "http://127.0.0.1:8088",
+  "at": "2026-11-22T02:49:55",
+  "scene": {
+    "construcciones": 1,
+    "pisos": [
+      {
+        "key": "frontend",
+        "nombre": "Frontend / UX",
+        "y": 0,
+        "personas": 3,
+        "salas": [
+          "dev01",
+          "dev02",
+          "dev03"
+        ]
+      },
+      {
+        "key": "backend",
+        "nombre": "Backend / APIs",
+        "y": 5.6,
+        "personas": 3,
+        "salas": [
+          "dev01",
+          "dev02"
+        ]
+      },
+      {
+        "key": "devops",
+        "nombre": "DevOps / Infraestructura",
+        "y": 11.2,
+        "personas": 1,
+        "salas": [
+          "dev04"
+        ]
+      },
+      {
+        "key": "qa",
+        "nombre": "Seguridad / QA",
+        "y": 16.799999999999997,
+        "personas": 4,
+        "salas": [
+          "dev01",
+          "dev05"
+        ]
+      },
+      {
+        "key": "coordination",
+        "nombre": "Coordinación",
+        "y": 22.4,
+        "personas": 1,
+        "salas": [
+          "dev01"
+        ]
+      }
+    ],
+    "sesiones": [
+      {
+        "id": "ses_xFPoBxK6WZRlfUbI",
+        "agente": "ana-claude",
+        "owner": "dev01",
+        "runtime": "Sintético",
+        "piso": "coordination",
+        "estado": "libre",
+        "visible": true,
+        "sub": false,
+        "coordinador": true
+      },
+      {
+        "id": "ses_MylLJOVkBA3NIhg-",
+        "agente": "ana-claude",
+        "owner": "dev01",
+        "runtime": "Sintético",
+        "piso": "qa",
+        "estado": "libre",
+        "visible": true,
+        "sub": true,
+        "coordinador": false
+      },
+      {
+        "id": "ses_OpTb91TbVWVnvq_A",
+        "agente": "ana-claude",
+        "owner": "dev01",
+        "runtime": "Sintético",
+        "piso": "frontend",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": true,
+        "coordinador": false
+      },
+      {
+        "id": "ses_hConDn71U5k_12ur",
+        "agente": "ana-codex",
+        "owner": "dev01",
+        "runtime": "Sintético",
+        "piso": "backend",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_DE9GIFDsGegyd4la",
+        "agente": "ben-claude",
+        "owner": "dev02",
+        "runtime": "Sintético",
+        "piso": "backend",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_3PrkxDRKkK0fPWIU",
+        "agente": "ben-claude",
+        "owner": "dev02",
+        "runtime": "Sintético",
+        "piso": "backend",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": true,
+        "coordinador": false
+      },
+      {
+        "id": "ses_-PraZ7yxWEoMO5jr",
+        "agente": "ben-opencode",
+        "owner": "dev02",
+        "runtime": "Sintético",
+        "piso": "frontend",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_F7AvgrHo1KwULUCs",
+        "agente": "cris-claude",
+        "owner": "dev03",
+        "runtime": "Sintético",
+        "piso": "frontend",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_fh0EH5b3ngacf9z7",
+        "agente": "dani-codex",
+        "owner": "dev04",
+        "runtime": "Sintético",
+        "piso": "devops",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_VNZ5FUi8X8ZKXM-q",
+        "agente": "eva-claude",
+        "owner": "dev05",
+        "runtime": "Sintético",
+        "piso": "qa",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_XIoFMr5EnggG4_op",
+        "agente": "eva-claude",
+        "owner": "dev05",
+        "runtime": "Sintético",
+        "piso": "qa",
+        "estado": "espera",
+        "visible": true,
+        "sub": true,
+        "coordinador": false
+      },
+      {
+        "id": "ses_msAj3kWbdaqCs4MN",
+        "agente": "eva-opencode",
+        "owner": "dev05",
+        "runtime": "Sintético",
+        "piso": "qa",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      }
+    ],
+    "rotulos": 12,
+    "enAscensor": 0,
+    "caminando": 0,
+    "fps": 1,
+    "calidad": "alta"
+  },
+  "anonymous": {
+    "login": true,
+    "panel": false,
+    "floors": false,
+    "zoom": false
+  },
+  "anonymous_ok": true,
+  "conexion": "en vivo",
+  "tarjetas": 120,
+  "login_visible": false,
+  "scene_after": {
+    "construcciones": 1,
+    "pisos": [
+      {
+        "key": "frontend",
+        "nombre": "Frontend / UX",
+        "y": 0,
+        "personas": 3,
+        "salas": [
+          "dev01",
+          "dev02",
+          "dev03"
+        ]
+      },
+      {
+        "key": "backend",
+        "nombre": "Backend / APIs",
+        "y": 5.6,
+        "personas": 3,
+        "salas": [
+          "dev01",
+          "dev02"
+        ]
+      },
+      {
+        "key": "devops",
+        "nombre": "DevOps / Infraestructura",
+        "y": 11.2,
+        "personas": 1,
+        "salas": [
+          "dev04"
+        ]
+      },
+      {
+        "key": "qa",
+        "nombre": "Seguridad / QA",
+        "y": 16.799999999999997,
+        "personas": 4,
+        "salas": [
+          "dev01",
+          "dev05"
+        ]
+      },
+      {
+        "key": "coordination",
+        "nombre": "Coordinación",
+        "y": 22.4,
+        "personas": 1,
+        "salas": [
+          "dev01"
+        ]
+      }
+    ],
+    "sesiones": [
+      {
+        "id": "ses_xFPoBxK6WZRlfUbI",
+        "agente": "ana-claude",
+        "owner": "dev01",
+        "runtime": "Sintético",
+        "piso": "coordination",
+        "estado": "libre",
+        "visible": true,
+        "sub": false,
+        "coordinador": true
+      },
+      {
+        "id": "ses_MylLJOVkBA3NIhg-",
+        "agente": "ana-claude",
+        "owner": "dev01",
+        "runtime": "Sintético",
+        "piso": "qa",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": true,
+        "coordinador": false
+      },
+      {
+        "id": "ses_OpTb91TbVWVnvq_A",
+        "agente": "ana-claude",
+        "owner": "dev01",
+        "runtime": "Sintético",
+        "piso": "frontend",
+        "estado": "espera",
+        "visible": true,
+        "sub": true,
+        "coordinador": false
+      },
+      {
+        "id": "ses_hConDn71U5k_12ur",
+        "agente": "ana-codex",
+        "owner": "dev01",
+        "runtime": "Sintético",
+        "piso": "backend",
+        "estado": "libre",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_DE9GIFDsGegyd4la",
+        "agente": "ben-claude",
+        "owner": "dev02",
+        "runtime": "Sintético",
+        "piso": "backend",
+        "estado": "libre",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_3PrkxDRKkK0fPWIU",
+        "agente": "ben-claude",
+        "owner": "dev02",
+        "runtime": "Sintético",
+        "piso": "backend",
+        "estado": "espera",
+        "visible": true,
+        "sub": true,
+        "coordinador": false
+      },
+      {
+        "id": "ses_-PraZ7yxWEoMO5jr",
+        "agente": "ben-opencode",
+        "owner": "dev02",
+        "runtime": "Sintético",
+        "piso": "frontend",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_F7AvgrHo1KwULUCs",
+        "agente": "cris-claude",
+        "owner": "dev03",
+        "runtime": "Sintético",
+        "piso": "frontend",
+        "estado": "trabajando",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_fh0EH5b3ngacf9z7",
+        "agente": "dani-codex",
+        "owner": "dev04",
+        "runtime": "Sintético",
+        "piso": "devops",
+        "estado": "espera",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_VNZ5FUi8X8ZKXM-q",
+        "agente": "eva-claude",
+        "owner": "dev05",
+        "runtime": "Sintético",
+        "piso": "qa",
+        "estado": "espera",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      },
+      {
+        "id": "ses_XIoFMr5EnggG4_op",
+        "agente": "eva-claude",
+        "owner": "dev05",
+        "runtime": "Sintético",
+        "piso": "qa",
+        "estado": "libre",
+        "visible": true,
+        "sub": true,
+        "coordinador": false
+      },
+      {
+        "id": "ses_msAj3kWbdaqCs4MN",
+        "agente": "eva-opencode",
+        "owner": "dev05",
+        "runtime": "Sintético",
+        "piso": "qa",
+        "estado": "libre",
+        "visible": true,
+        "sub": false,
+        "coordinador": false
+      }
+    ],
+    "rotulos": 12,
+    "enAscensor": 0,
+    "caminando": 5,
+    "fps": 1,
+    "calidad": "baja"
+  },
+  "realtime": {
+    "pill_after_drop": "reconectando…",
+    "pill_after_reconnect": "en vivo",
+    "missed_messages_recovered": true,
+    "duplicate_cards": 0,
+    "burst_post_seconds": 0.7,
+    "page_roundtrip_ms_after_burst": 1,
+    "latest_burst_message_shown": true,
+    "js_frame_ms": {
+      "simular": 0.33013466834138366,
+      "rotulos": 2.4127924215863668,
+      "mover": 0.48118544395749685,
+      "dibujar_software_gl": 103.56158778664818
+    },
+    "builds_after_burst": 1,
+    "filter_agent": "ana-codex",
+    "filter_cards": 1,
+    "filter_mismatches": [],
+    "filter_ok": true,
+    "ok": true
+  },
+  "chat_scroll": {
+    "starts_at_bottom": true,
+    "view_kept_while_reading_history": true,
+    "button_text": "↓ 2 mensajes nuevos",
+    "button_jumps_to_bottom": true,
+    "follows_again": true,
+    "last_visible_is_newest": true,
+    "ok": true
+  },
+  "chat": {
+    "canvas": false,
+    "mensajes": 303,
+    "title": "Agent Office · chat"
+  },
+  "errors": [],
+  "http_errors": []
+}

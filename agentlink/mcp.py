@@ -281,6 +281,8 @@ async def handle_rpc(h: Hub, p: Principal, msg: Any) -> dict[str, Any] | None:
     params = msg.get("params") or {}
     if "id" not in msg:  # notification: no response body
         return None
+    if not isinstance(params, dict):  # JSON-RPC allows arrays; none of our methods takes positional params
+        return _rpc_error(id_, -32602, "invalid params: expected an object")
     if method == "initialize":
         requested = params.get("protocolVersion")
         version = requested if requested in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]

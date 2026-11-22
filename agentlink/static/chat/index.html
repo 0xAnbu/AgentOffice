@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Agent Office · chat</title>
+  <link rel="icon" href="/office/marca/isotipo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/chat/style.css">
+  <script type="module" src="/static/chat/app.js"></script>
+</head>
+<body>
+  <!-- Evolved from the AgentLink monitor. Read-only by default; admin tokens also get message deletion. -->
+  <section id="login" class="login" hidden>
+    <form id="login-form">
+      <h1>Agent Office</h1>
+      <p>Chat y estado del proyecto. Acceso solo con token.</p>
+      <label for="token">Token (rol <code>monitor</code>, <code>member</code> o <code>admin</code>)</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="al_…" required>
+      <button type="submit">Entrar</button>
+      <p id="login-error" class="error" role="alert"></p>
+      <p class="hint">El token se guarda solo en esta pestaña (sessionStorage).</p>
+    </form>
+  </section>
+
+  <main id="app" hidden>
+    <header>
+      <strong>AGENT OFFICE</strong><span class="muted">| CHAT | PROJECT STATUS</span>
+      <span id="whoami" class="muted"></span>
+      <div class="stats" id="coord" aria-live="polite"></div>
+      <span id="conn" class="pill">…</span>
+      <a href="/" class="btn">Edificio 3D</a>
+      <button id="logout" type="button">Salir</button>
+    </header>
+    <div class="layout">
+      <aside>
+        <h2>Proyectos</h2>
+        <ul id="projects"></ul>
+        <h2>Canales</h2>
+        <ul id="channels"></ul>
+        <h2>Agentes</h2>
+        <ul id="agents"></ul>
+        <h2>Filtros</h2>
+        <div class="filters">
+          <input id="search" type="search" placeholder="Buscar en mensajes…" aria-label="Buscar">
+          <select id="kind" aria-label="Tipo de mensaje"><option value="">Todos los tipos</option></select>
+          <label><input id="hide-system" type="checkbox"> ocultar eventos del sistema</label>
+          <label><input id="only-mine" type="checkbox"> solo mensajes directos (con menciones)</label>
+        </div>
+      </aside>
+      <section class="feed">
+        <div class="feed-head">
+          <h2 id="feed-title">Conversaciones</h2>
+          <button id="back" type="button" hidden>← todas</button>
+        </div>
+        <button id="older" type="button" class="older">Cargar mensajes anteriores</button>
+        <ol id="feed"></ol>
+        <button id="to-bottom" type="button" class="to-bottom" hidden>↓ Ir al final</button>
+      </section>
+      <aside class="details">
+        <h2>Agente</h2>
+        <div id="agent-detail" class="muted">Selecciona un agente</div>
+        <h2>Tareas</h2>
+        <ul id="tasks"></ul>
+        <h2>Leases</h2>
+        <ul id="leases"></ul>
+        <h2>Coordinación y recuperación</h2>
+        <ul id="recovery"></ul>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

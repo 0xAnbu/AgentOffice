@@ -1,0 +1,29 @@
+{
+  "started": "2026-11-21T22:22:23.492442+00:00",
+  "steps": [
+    {
+      "step": "opencode: supervisor received and stored it",
+      "ok": true,
+      "at": "2026-11-21T22:22:23.797702+00:00"
+    }
+  ],
+  "results": {},
+  "runtimes": {
+    "claude-code": {
+      "runtime": "claude-code",
+      "available": true,
+      "version": "2.1.330 (Claude Code)"
+    },
+    "codex": {
+      "runtime": "codex",
+      "available": true,
+      "version": "codex-cli 0.170.0"
+    },
+    "opencode": {
+      "runtime": "opencode",
+      "available": true,
+      "version": "opencode v2.1.4"
+    }
+  },
+  "finished": "2026-11-21T22:32:23.888126+00:00"
+}

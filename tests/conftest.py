@@ -21,6 +21,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 ADMIN = "al_test-admin-token-0123456789abcdefghijklmnop"
 PG_URL = os.environ.get("AGENTLINK_TEST_PG_URL", "")
 TABLES = (
+    "events deliveries coordinators checkpoints task_deps sessions devices project_members projects meta "
     "mentions messages tasks leases kv presence audit ratelimit archives members tokens channels agents schema_version"
 )
 
@@ -42,6 +43,7 @@ def settings(tmp_path: Any) -> Settings:
         sqlite_path=str(tmp_path / "test.db"),
         github_webhook_secret="whsec-test",
         max_wait_seconds=5,
+        reconcile_interval=0,
         poll_interval=0.2,
         write_rate_per_min=10_000,
         read_rate_per_min=100_000,
@@ -100,3 +102,19 @@ def world(client: TestClient) -> World:
 @pytest.fixture
 def strict_settings(settings: Settings) -> Settings:
     return replace(settings, write_rate_per_min=3)
+
+
+@pytest.fixture(autouse=True)
+def _reset_clock() -> Iterator[None]:
+    from agentlink.security import reset_clock
+
+    reset_clock()
+    yield
+    reset_clock()
+
+
+@pytest.fixture
+def office(client: TestClient, hub: Hub) -> Any:
+    from .office_helpers import Office
+
+    return Office(client, hub)

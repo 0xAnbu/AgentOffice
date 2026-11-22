@@ -59,7 +59,7 @@ async def long_poll(fetch: Callable[[], Any], wait: float, notifier: Notifier, i
 
 def _has_items(result: Any) -> bool:
     if isinstance(result, dict):
-        return bool(result.get("messages"))
+        return bool(result.get("messages") or result.get("events") or result.get("resync"))
     return bool(result)
 
 
@@ -98,6 +98,21 @@ def post_message(
 ) -> dict[str, Any]:
     payload = v.obj(payload)
     ch = channel_for(db, p, channel, write=True)
+    with db.transaction() as tx:
+        msg = insert_message(tx, p, ch, payload, system=system)
+    if notifier:
+        notifier.bump()
+    return msg
+
+
+def insert_message(
+    tx: Executor, p: Principal, ch: Row, payload: dict[str, Any], *, system: bool = False
+) -> dict[str, Any]:
+    """Validate and insert one message (plus mentions and its durable event) inside the caller's transaction.
+
+    Callers that change state (claims, leases, recovery) post their system message through this same
+    transaction, so the state change, the system message and the event commit or roll back together.
+    """
     kinds = v.ALL_KINDS if system else v.POSTABLE_KINDS
     kind = v.choice(payload.get("kind"), "kind", kinds, default="chat")
     body = v.text(payload.get("body"), "body", v.MAX_BODY, required=True)
@@ -106,54 +121,72 @@ def post_message(
     tags = v.str_list(payload.get("tags"), "tags", max_len=50)
     reply_to = v.opt_int(payload.get("reply_to"), "reply_to")
     client_id = v.text(payload.get("client_id"), "client_id", 100) or None
+    priority = v.integer(payload.get("priority"), "priority", default=2, lo=1, hi=3)
     mention_names = set(v.str_list(payload.get("mentions"), "mentions", max_len=64))
     mention_names |= set(MENTION_RE.findall(body))
 
-    with db.transaction() as tx:
-        if client_id:
-            dup = tx.one("SELECT id FROM messages WHERE author_id = ? AND client_id = ?", (p.agent_id, client_id))
-            if dup:  # idempotent retry: return the original
-                return {**_load(tx, [int(dup["id"])])[0], "duplicate": True}
-        thread_id = None
-        if reply_to:
-            parent = tx.one("SELECT id, channel_id, thread_id FROM messages WHERE id = ?", (reply_to,))
-            if parent is None or parent["channel_id"] != ch["id"]:
-                raise BadRequest("reply_to must reference a message in the same channel")
-            thread_id = parent["thread_id"] or parent["id"]
-        row = tx.one(
-            "INSERT INTO messages(channel_id, author_id, kind, body, data, refs, tags, thread_id, reply_to, "
-            "client_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-            (
-                ch["id"],
-                p.agent_id,
-                kind,
-                body,
-                data,
-                json.dumps(refs) if refs else None,
-                json.dumps(tags) if tags else None,
-                thread_id,
-                reply_to,
-                client_id,
-                now_ms(),
-            ),
-        )
-        assert row is not None
-        mid = int(row["id"])
-        if mention_names:
-            placeholders = ",".join("?" * len(mention_names))
-            for a in tx.query(f"SELECT id FROM agents WHERE name IN ({placeholders})", tuple(mention_names)):
-                if int(a["id"]) != p.agent_id:
-                    tx.execute("INSERT INTO mentions(agent_id, message_id) VALUES (?, ?)", (a["id"], mid))
-        msg = _load(tx, [mid])[0]
-    if notifier:
-        notifier.bump()
-    return msg
+    if client_id:
+        dup = tx.one("SELECT id FROM messages WHERE author_id = ? AND client_id = ?", (p.agent_id, client_id))
+        if dup:  # idempotent retry: return the original
+            return {**_load(tx, [int(dup["id"])])[0], "duplicate": True}
+    thread_id = None
+    if reply_to:
+        parent = tx.one("SELECT id, channel_id, thread_id FROM messages WHERE id = ?", (reply_to,))
+        if parent is None or parent["channel_id"] != ch["id"]:
+            raise BadRequest("reply_to must reference a message in the same channel")
+        thread_id = parent["thread_id"] or parent["id"]
+    row = tx.one(
+        "INSERT INTO messages(channel_id, author_id, kind, body, data, refs, tags, thread_id, reply_to, "
+        "client_id, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        (
+            ch["id"],
+            p.agent_id,
+            kind,
+            body,
+            data,
+            json.dumps(refs) if refs else None,
+            json.dumps(tags) if tags else None,
+            thread_id,
+            reply_to,
+            client_id,
+            priority,
+            now_ms(),
+        ),
+    )
+    assert row is not None
+    mid = int(row["id"])
+    mentioned: list[str] = []
+    if mention_names:
+        placeholders = ",".join("?" * len(mention_names))
+        for a in tx.query(f"SELECT id, name FROM agents WHERE name IN ({placeholders})", tuple(mention_names)):
+            if int(a["id"]) != p.agent_id:
+                tx.execute("INSERT INTO mentions(agent_id, message_id) VALUES (?, ?)", (a["id"], mid))
+                mentioned.append(str(a["name"]))
+    from .events import emit  # local import: events imports validation only, no cycle at module load
+
+    emit(
+        tx,
+        "message.created",
+        project_id=ch.get("project_id"),
+        channel_id=int(ch["id"]),
+        actor_id=p.agent_id,
+        message_id=mid,
+        data={
+            "kind": kind,
+            "priority": priority,
+            "mentions": sorted(mentioned),
+            "thread_id": thread_id,
+            "reply_to": reply_to,
+            "summary": body[:240],
+        },
+    )
+    return _load(tx, [mid])[0]
 
 
 # -- read path -------------------------------------------------------------------
 
 _SELECT = (
-    "SELECT m.id, m.kind, m.body, m.data, m.refs, m.tags, m.thread_id, m.reply_to, m.created_at, "
+    "SELECT m.id, m.kind, m.body, m.data, m.refs, m.tags, m.thread_id, m.reply_to, m.priority, m.created_at, "
     "c.name AS channel, a.name AS author FROM messages m "
     "JOIN channels c ON c.id = m.channel_id JOIN agents a ON a.id = m.author_id "
 )
@@ -193,10 +226,28 @@ def _shape(db: Executor, rows: list[Row]) -> list[dict[str, Any]]:
         for k in ("thread_id", "reply_to"):
             if r[k]:
                 item[k] = r[k]
+        if r.get("priority") not in (None, 2):
+            item["priority"] = r["priority"]
         if int(r["id"]) in mentions:
             item["mentions"] = sorted(mentions[int(r["id"])])
         out.append(item)
     return out
+
+
+def _filters(q: dict[str, Any], where: str, params: list[Any]) -> tuple[str, list[Any]]:
+    """Optional read filters shared by channel, feed: `q` (text search), `author`, `before` (older page)."""
+    if q.get("q"):
+        term = v.text(q["q"], "q", 200).strip().lower()
+        if term:
+            where += " AND LOWER(m.body) LIKE ?"
+            params.append(f"%{term.replace('%', '').replace('_', '')}%")
+    if q.get("author"):
+        where += " AND m.author_id = (SELECT ax.id FROM agents ax WHERE ax.name = ?)"
+        params.append(v.name(q["author"], "author"))
+    if q.get("before"):
+        where += " AND m.id < ?"
+        params.append(v.integer(q["before"], "before", lo=1))
+    return where, params
 
 
 def _query_messages(db: Database, where: str, params: tuple[Any, ...], after: int | None, limit: int) -> dict[str, Any]:
@@ -235,13 +286,18 @@ def channel_messages(db: Database, p: Principal, channel: str | int, q: dict[str
             v.choice(k, "kinds", v.ALL_KINDS)
         where += f" AND m.kind IN ({','.join('?' * len(kinds))})"
         params += kinds
+    where, params = _filters(q, where, params)
     return _query_messages(db, where, tuple(params), after, limit)
 
 
 def feed(db: Database, p: Principal, q: dict[str, Any]) -> dict[str, Any]:
     after, limit = read_params(q)
-    where, params = visible_channel_ids_sql(p, "m.channel_id")
-    return _query_messages(db, where, params, after, limit)
+    where, base = visible_channel_ids_sql(p, "m.channel_id")
+    if q.get("project"):
+        where += " AND m.channel_id IN (SELECT cx.id FROM channels cx JOIN projects px ON px.id = cx.project_id WHERE px.name = ?)"
+        base = (*base, v.name(q["project"], "project"))
+    where, params = _filters(q, where, list(base))
+    return _query_messages(db, where, tuple(params), after, limit)
 
 
 def inbox(db: Database, p: Principal, q: dict[str, Any]) -> dict[str, Any]:

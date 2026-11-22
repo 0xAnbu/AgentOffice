@@ -24,11 +24,46 @@ from typing import Any
 STATE_DIR = Path(os.environ.get("AGENTLINK_STATE_DIR", Path.home() / ".agentlink"))
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow redirects: urllib would resend the Authorization header to the new location (any host)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+OPENER = urllib.request.build_opener(_NoRedirect())
+
+
+def check_server_url(url: str) -> str:
+    """https everywhere; plain http only for loopback / the Tailscale range, or with AGENTLINK_ALLOW_HTTP=1."""
+    import ipaddress
+
+    u = urllib.parse.urlparse(url or "")
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise ValueError("server URL must be http(s)://host")
+    if u.scheme == "http" and os.environ.get("AGENTLINK_ALLOW_HTTP") != "1":
+        host = u.hostname
+        try:
+            ip = ipaddress.ip_address(host)
+            ok = ip.is_loopback or ip in ipaddress.ip_network("100.64.0.0/10")
+        except ValueError:
+            ok = host == "localhost"
+        if not ok:
+            raise ValueError(
+                f"refusing plain http to {host}: the token would travel unencrypted. Use https (e.g. Tailscale Serve) "
+                "or set AGENTLINK_ALLOW_HTTP=1"
+            )
+    return url.rstrip("/")
+
+
 class Client:
     def __init__(self, url: str, token: str) -> None:
         if not url:
             sys.exit("AGENTLINK_URL (or --url) is required")
-        self.url = url.rstrip("/")
+        try:
+            self.url = check_server_url(url)
+        except ValueError as e:
+            sys.exit(str(e))
         self.token = token
 
     def request(
@@ -42,8 +77,6 @@ class Client:
     ) -> Any:
         q = {k: v for k, v in (query or {}).items() if v is not None and v != ""}
         url = self.url + path + ("?" + urllib.parse.urlencode(q) if q else "")
-        if not url.startswith(("https://", "http://")):
-            sys.exit("URL must be http(s)")
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(url, data=data, method=method)  # noqa: S310 - scheme checked above
         req.add_header("Authorization", f"Bearer {self.token}")
@@ -52,10 +85,14 @@ class Client:
             req.add_header("Content-Type", "application/json")
         for attempt in range(4):
             try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+                with OPENER.open(req, timeout=timeout) as resp:
                     payload = resp.read()
                     return payload if raw else json.loads(payload or b"null")
             except urllib.error.HTTPError as e:
+                if 300 <= e.code < 400:
+                    sys.exit(
+                        f"server redirected to {e.headers.get('Location')}; not followed (it would resend the token)"
+                    )
                 detail = e.read().decode("utf-8", "replace")
                 if e.code == 429 and attempt < 3:
                     time.sleep(int(e.headers.get("Retry-After", "5")))
@@ -280,7 +317,31 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _route(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Find the subcommand after the legacy global options (--url/--token apply to every command)."""
+    i = 0
+    while i < len(argv) and argv[i] in ("--url", "--token"):
+        os.environ["AGENTLINK_URL" if argv[i] == "--url" else "AGENTLINK_TOKEN"] = argv[i + 1]
+        i += 2
+    return (argv[i] if i < len(argv) else None), argv[i:]
+
+
 def main(argv: list[str] | None = None) -> None:
+    from . import clientcli
+
+    raw = list(sys.argv[1:] if argv is None else argv)
+    cmd, rest = _route(raw)
+    legacy_inbox = cmd == "inbox" and not ({"--pending", "--all"} & set(rest))
+    if cmd in clientcli.COMMANDS and not legacy_inbox:
+        clientcli.main(rest)
+        return
+    from .local import load_config
+
+    cfg = load_config()  # `agentlink connect` config also serves the legacy commands
+    if cfg.get("server"):
+        os.environ.setdefault("AGENTLINK_URL", cfg["server"])
+    if cfg.get("token"):
+        os.environ.setdefault("AGENTLINK_TOKEN", cfg["token"])
     a = build_parser().parse_args(argv)
     if a.cmd == "gen-token":
         print("al_" + secrets.token_urlsafe(32))

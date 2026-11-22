@@ -1,0 +1,381 @@
+/* La oficina. Las letras de la marca (Archivo Expanded en los titulares, Space Grotesk en el texto), el gris claro de día y el
+   negro de la casa de noche. Lo que se mueve es la maqueta en 3D; aquí solo va la tipografía, que así sale nítida a cualquier
+   resolución. */
+@font-face {
+  font-family: "Archivo";
+  src: url("marca/archivo.ttf") format("truetype");
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("marca/space-grotesk.ttf") format("truetype");
+  font-weight: 300 700;
+  font-display: swap;
+}
+:root {
+  --fondo: #EEF1F3;
+  --texto: #0B0B0B;
+  --texto2: #6E6E73;
+  --texto3: #A1A1A6;
+  --halo: rgba(255, 255, 255, .96);
+  --pista: rgba(118, 118, 128, .12);
+  --segmento: #FFFFFF;
+  --sombra-segmento: 0 3px 8px rgba(0, 0, 0, .12), 0 3px 1px rgba(0, 0, 0, .04);
+  --filete: rgba(60, 60, 67, .18);
+  --u: 1px;                      /* la unidad de los rótulos: la escala de la escena, la pone oficina.js */
+  --resorte: cubic-bezier(.22, 1.18, .36, 1);
+  --suave: cubic-bezier(.25, .1, .25, 1);
+  color-scheme: light;
+}
+:root[data-tema="noche"] {
+  --fondo: #04090F;
+  --texto: #F2F5F9;
+  --texto2: #8B97A6;
+  --texto3: #4E5A69;
+  --halo: rgba(4, 9, 15, .9);
+  --pista: rgba(118, 118, 128, .24);
+  --segmento: #2A3441;
+  --sombra-segmento: 0 3px 8px rgba(0, 0, 0, .4);
+  --filete: rgba(84, 84, 88, .45);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: "Space Grotesk", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  transition: background-color .6s var(--suave);
+}
+
+.oficina {
+  position: fixed;
+  inset: 0;
+  opacity: 0;
+  transform: translateY(1.4vh) scale(.988);
+  transition: opacity 1s var(--suave), transform 1.3s var(--resorte);
+}
+.oficina.lista { opacity: 1; transform: none; }
+.capa { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.escena { transition: opacity .5s var(--suave); outline: none; }
+.oficina.cambiando .escena { opacity: 0; }
+.rotulos { pointer-events: none; will-change: transform; contain: layout style; }
+
+/* ---------------------------------------------------------------------------------------------- los rótulos */
+.rotulo {
+  position: absolute;
+  left: 0; top: 0;
+  /* El sitio lo pone oficina.js con `translate`; esto solo lo centra encima de su punto. */
+  transform: translate(-50%, -100%);
+  text-align: center;
+  white-space: nowrap;
+  line-height: 1.18;
+  /* Un contorno sólido del color del fondo detrás de cada letra (pintado antes que la letra) y una sombra suave: se lee
+     sobre el piso, la madera o el vidrio, sin recuadro. */
+  -webkit-text-stroke: .3em var(--halo);
+  paint-order: stroke fill;
+  text-shadow: 0 .06em .5em var(--halo);
+  transition: opacity .45s var(--suave);
+  animation: aparece .8s var(--resorte) both;
+  animation-delay: calc(400ms + var(--i, 0) * 22ms);
+}
+.rotulo.oculto { visibility: hidden; }
+/* Cuando se pisan con otro, queda solo el nombre. */
+.rotulo.compacto .estado, .rotulo.compacto .detalle, .rotulo.compacto .mas { display: none; }
+.rotulo.compacto .nombre { font-size: calc(var(--u) * .26); }
+@keyframes aparece { from { opacity: 0; transform: translate(-50%, calc(-100% + .6em)); } }
+/* Cambió de estado: la línea del estado entra de nuevo, sin saltar. */
+.rotulo.cambia .estado, .rotulo.cambia .detalle { animation: cambia .7s var(--resorte) both; }
+@keyframes cambia { from { opacity: 0; transform: translateY(.35em); } }
+.rotulo .nombre {
+  font-size: calc(var(--u) * .31);
+  font-weight: 600;
+  letter-spacing: -.005em;
+  color: var(--texto);
+}
+.rotulo .estado {
+  font-size: calc(var(--u) * .245);
+  font-weight: 500;
+  color: var(--texto2);
+  font-variant-numeric: tabular-nums;
+}
+.rotulo .detalle {
+  font-size: calc(var(--u) * .215);
+  color: var(--texto3);
+  max-width: calc(var(--u) * 2.2);
+  margin: 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rotulo .detalle:empty { display: none; }
+.rotulo.trabajando .estado { color: var(--texto); }
+.rotulo.espera .estado { color: var(--c); font-weight: 560; }
+.rotulo .cargo {
+  margin-left: .38em;
+  font-size: .74em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--texto2);
+}
+.rotulo .cargo:empty { display: none; }
+.rotulo.cerrado .nombre { color: var(--texto2); font-size: calc(var(--u) * .26); }
+.rotulo.cerrado .cargo { color: var(--texto2); }
+/* El cerrado dice solo su nombre: «Cerrado» y lo demás, al pasar el cursor. */
+.rotulo.cerrado:not(.encima) .estado, .rotulo.cerrado:not(.encima) .detalle, .rotulo.cerrado:not(.encima) .mas { display: none; }
+.rotulo.cerrado .estado { color: var(--texto3); }
+.rotulo.persona .nombre { font-size: calc(var(--u) * .3); }
+/* Al pasar el cursor: lo completo, sin recortar. */
+.rotulo.encima { z-index: 2; }
+.rotulo.encima .detalle { max-width: none; color: var(--texto2); }
+.rotulo .mas { display: none; font-size: calc(var(--u) * .19); color: var(--texto3); font-variant-numeric: tabular-nums; }
+.rotulo.encima .mas { display: block; }
+/* Cerca, hay sitio para decir más: desde cuándo, la bandeja y el detalle entero. */
+.rotulos.cerca .rotulo .mas { display: block; }
+/* Los cerrados, de cerca, solo con su nombre y «Cerrado»: lo demás al pasar el cursor. */
+.rotulos.cerca .rotulo.cerrado:not(.encima) .mas { display: none; }
+.rotulos.cerca .rotulo .detalle { max-width: calc(var(--u) * 3.2); }
+
+/* ---------------------------------------------------------------------------------------------- la cámara */
+.oficina { touch-action: none; }
+.oficina .escena { cursor: grab; }
+.oficina.acercable .escena { cursor: zoom-in; }
+.oficina.arrastrando .escena { cursor: grabbing; }
+/* De cerca la oficina pasa por debajo del título y del registro: un velo del color del fondo los deja leer. */
+.velo {
+  position: fixed;
+  left: 0; right: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .5s var(--suave);
+}
+.velo.arriba { top: 0; height: calc(clamp(18px, 3.6vh, 96px) + clamp(26px, 2.05vw, 78px) * 3.6); background: linear-gradient(color-mix(in srgb, var(--fondo) 72%, transparent) 30%, transparent); }
+.velo.abajo { bottom: 0; right: auto; width: min(52vw, 1900px); height: min(34vh, 26em); font-size: clamp(12px, .72vw, 28px); background: radial-gradient(ellipse 100% 100% at 0% 100%, color-mix(in srgb, var(--fondo) 80%, transparent) 38%, transparent 72%); }
+.velo { opacity: 1; }
+.zoom {
+  position: fixed;
+  right: clamp(20px, 2.8vw, 120px);
+  bottom: clamp(16px, 3.2vh, 90px);
+  display: flex;
+  align-items: flex-end;
+  gap: .7em;
+  font-size: clamp(12px, .7vw, 26px);
+}
+.zoom .par, .zoom .todo {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--segmento) 78%, transparent);
+  -webkit-backdrop-filter: saturate(1.6) blur(18px);
+  backdrop-filter: saturate(1.6) blur(18px);
+  box-shadow: 0 0 0 .5px var(--filete), 0 6px 18px rgba(0, 0, 0, .10);
+}
+.zoom .par { display: grid; overflow: hidden; }
+.zoom button {
+  appearance: none;
+  border: 0;
+  margin: 0;
+  background: transparent;
+  color: var(--texto);
+  font: inherit;
+  font-weight: 500;
+  letter-spacing: -.01em;
+  cursor: pointer;
+  transition: background-color .25s var(--suave), opacity .25s var(--suave), transform .35s var(--resorte);
+}
+.zoom .par button { width: 2.9em; height: 2.9em; display: grid; place-items: center; }
+.zoom .par button + button { box-shadow: inset 0 .5px 0 var(--filete); }
+.zoom svg { width: 1.25em; height: 1.25em; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+.zoom button:hover:not(:disabled) { background: var(--pista); }
+.zoom button:active:not(:disabled) { transform: scale(.94); }
+.zoom button:disabled { opacity: .3; cursor: default; }
+.zoom button:focus-visible { outline: 2px solid #0A84FF; outline-offset: 2px; }
+.zoom .todo { padding: .78em 1.2em; opacity: 0; transform: translateX(.6em); pointer-events: none; }
+.zoom.acercado .todo { opacity: 1; transform: none; pointer-events: auto; }
+
+/* ---------------------------------------------------------------------------------------------- la cabeza */
+.cabeza {
+  position: fixed;
+  top: clamp(18px, 3.6vh, 96px);
+  left: clamp(20px, 2.8vw, 120px);
+  pointer-events: none;
+}
+.cabeza h1 {
+  margin: 0;
+  font-family: "Archivo", "Space Grotesk", system-ui, sans-serif;
+  font-stretch: 125%;
+  font-size: clamp(24px, 1.85vw, 72px);
+  font-weight: 600;
+  letter-spacing: -.01em;
+  line-height: 1.05;
+}
+.resumen {
+  margin: .5em 0 0;
+  font-size: clamp(13px, .84vw, 32px);
+  color: var(--texto2);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.004em;
+}
+.resumen b { font-weight: 600; color: var(--texto); }
+.resumen .sep { color: var(--texto3); padding: 0 .45em; }
+
+/* ---------------------------------------------------------------------------------------------- día y noche */
+.tema {
+  position: fixed;
+  top: clamp(18px, 3.6vh, 96px);
+  right: clamp(20px, 2.8vw, 120px);
+  display: grid;
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--pista);
+  font-size: clamp(12px, .7vw, 26px);
+}
+.tema button {
+  appearance: none;
+  border: 0;
+  margin: 0;
+  padding: .42em 1.25em;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--texto);
+  font: inherit;
+  font-weight: 500;
+  letter-spacing: -.01em;
+  cursor: pointer;
+  transition: background-color .3s var(--suave), box-shadow .3s var(--suave), transform .35s var(--resorte);
+}
+.tema button[aria-checked="true"] { background: var(--segmento); box-shadow: var(--sombra-segmento); }
+.tema button:active { transform: scale(.96); }
+.tema button:focus-visible { outline: 2px solid #0A84FF; outline-offset: 2px; }
+
+/* ---------------------------------------------------------------------------------------------- los encargos */
+.mensajeria {
+  position: fixed;
+  left: clamp(20px, 2.8vw, 120px);
+  bottom: clamp(16px, 3.2vh, 90px);
+  width: min(34vw, 1300px);
+  pointer-events: none;
+  font-size: clamp(12px, .72vw, 28px);
+}
+.mensajeria h2 {
+  margin: 0 0 .55em;
+  font-size: 1em;
+  font-weight: 500;
+  color: var(--texto3);
+  font-variant-caps: all-small-caps;
+  letter-spacing: .07em;
+}
+.filas { list-style: none; margin: 0; padding: 0; }
+.filas li {
+  display: grid;
+  grid-template-columns: 3.4em max-content 1fr;
+  gap: .9em;
+  align-items: baseline;
+  padding: .42em 0;
+  border-top: 1px solid var(--filete);
+  animation: entra .7s var(--resorte) both;
+}
+.filas li:first-child { border-top: 0; }
+.filas .hora { color: var(--texto3); font-variant-numeric: tabular-nums; }
+.filas .ruta { font-weight: 600; letter-spacing: -.005em; }
+.filas .ruta .flecha { color: var(--texto3); font-weight: 400; padding: 0 .3em; }
+.filas .ruta .cargo { margin-left: .3em; font-weight: 400; color: var(--texto3); font-size: .9em; }
+.filas .que { color: var(--texto2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filas li.respuesta .que::before, .filas li.voz-respuesta .que::before { content: "Respuesta: "; color: var(--texto3); }
+.filas li.voz .que::before { content: "Pedido: "; color: var(--texto3); }
+@keyframes entra { from { opacity: 0; transform: translateY(.7em); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 760px) {
+  .mensajeria { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .filas li, .rotulo, .rotulo.cambia .estado, .rotulo.cambia .detalle { animation: none; }
+  body, .escena, .oficina { transition: none; }
+  .oficina { transform: none; }
+}
+
+/* ============================================================== Agent Office additions */
+/* Labels: runtime / coordinator / sub-agent badges; the shape of the original label is kept. */
+.rotulo { pointer-events: auto; cursor: pointer; }
+.rotulo .insignias { display: inline-flex; gap: calc(var(--u) * .06); margin-right: calc(var(--u) * .08); vertical-align: middle; }
+.insignia { text-shadow: none; -webkit-text-stroke: 0; font: 600 calc(var(--u) * .15)/1 "Space Grotesk", system-ui, sans-serif; padding: calc(var(--u) * .04) calc(var(--u) * .07);
+  border-radius: calc(var(--u) * .08); background: var(--c); color: #fff; letter-spacing: .02em; }
+.insignia.coord { background: #C2410C; }
+.insignia.cand { background: transparent; color: #C2410C; border: 1px solid #C2410C; }
+.insignia.sub { background: transparent; color: var(--texto2); border: 1px solid var(--filete); }
+.insignia.aviso { background: #E5484D; }
+.rotulo.subagente .quien { font-size: .9em; }
+.rotulo.coordinador .quien { text-decoration: underline 2px #C2410C; text-underline-offset: 3px; }
+.rotulo.marca-exito::after, .rotulo.marca-coordinador::after { content: "✓"; position: absolute; left: 50%; top: calc(var(--u) * -.45);
+  transform: translateX(-50%); font: 700 calc(var(--u) * .3)/1 system-ui; color: #30B46C; animation: cambia .7s var(--resorte) both; }
+.rotulo.marca-coordinador::after { content: "★ nuevo coordinador"; color: #C2410C; font-size: calc(var(--u) * .2); white-space: nowrap; }
+.letrero-piso { position: absolute; left: 0; top: 0; transform: translate(-100%, -50%); font: 650 13px/1.2 "Archivo", system-ui;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--texto2); background: var(--halo); padding: 4px 8px; border-radius: 8px;
+  white-space: nowrap; pointer-events: none; }
+.letrero-piso.oculto { visibility: hidden; }
+
+/* Floors navigation */
+.plantas { position: fixed; left: clamp(12px, 1.6vw, 40px); top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+.plantas button { font: 500 12px/1.2 "Space Grotesk", system-ui; text-align: left; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--filete);
+  background: var(--halo); color: var(--texto); cursor: pointer; backdrop-filter: blur(10px); }
+.plantas button:hover { border-color: var(--texto2); }
+
+/* Activity Center: floating, translucent, never half the screen; the building stays the protagonist. */
+.actividad { position: fixed; right: clamp(10px, 1.2vw, 28px); top: clamp(80px, 11vh, 140px); bottom: clamp(10px, 2vh, 28px);
+  width: clamp(320px, 28vw, 460px); display: flex; flex-direction: column; z-index: 6; border-radius: 18px;
+  background: color-mix(in srgb, var(--fondo) 62%, transparent); backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2); border: 1px solid var(--filete); box-shadow: 0 12px 40px rgba(0, 0, 0, .12);
+  font: 13px/1.35 "Space Grotesk", system-ui, sans-serif; color: var(--texto); overflow: hidden; transition: width .25s var(--suave); }
+.actividad.expandida { width: clamp(420px, 46vw, 820px); }
+.actividad.plegada { bottom: auto; }
+.actividad.plegada .filtros, .actividad.plegada .tarjetas { display: none; }
+.actividad header { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; }
+.actividad h2 { font: 650 14px/1 "Archivo", system-ui; margin: 0; letter-spacing: .02em; flex: 1; }
+.actividad header button, .boton-chat { font: inherit; border: 1px solid var(--filete); background: var(--segmento); color: var(--texto);
+  border-radius: 9px; padding: 4px 9px; cursor: pointer; text-decoration: none; }
+.boton-chat { font-weight: 600; background: var(--texto); color: var(--fondo); }
+.conexion { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: var(--pista); }
+.conexion.vivo { background: #30B46C22; color: #1F8A52; }
+.conexion.reconectando { background: #D9A40022; color: #8A6A00; }
+.conexion.caido { background: #E5484D22; color: #B42318; }
+.filtros { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; align-items: center; }
+.filtros select, .filtros input[name=tarea] { font: inherit; font-size: 12px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--filete);
+  background: var(--segmento); color: var(--texto); max-width: 46%; }
+.filtros input[name=tarea] { width: 70px; }
+.filtros .cuenta { margin-left: auto; color: var(--texto2); font-size: 11px; }
+.tarjetas { list-style: none; margin: 0; padding: 0 10px 12px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.tarjeta { background: var(--segmento); border: 1px solid var(--filete); border-left: 4px solid var(--cc); border-radius: 12px; padding: 9px 11px; }
+.tarjeta.urgente { box-shadow: 0 0 0 2px #E5484D55; }
+.tarjeta .cab { display: flex; align-items: center; gap: 8px; }
+.tarjeta .icono { width: 20px; height: 20px; border-radius: 6px; background: var(--cc); color: #fff; display: grid; place-items: center; font: 700 11px/1 system-ui; }
+.tarjeta .titulo { font-weight: 650; flex: 1; text-transform: uppercase; font-size: 11.5px; letter-spacing: .04em; color: var(--cc); }
+.tarjeta time { color: var(--texto2); font-size: 11px; }
+.tarjeta .ruta { color: var(--texto2); font-size: 12px; margin-top: 3px; }
+.tarjeta .resumen-ev { margin-top: 4px; overflow-wrap: anywhere; }
+.tarjeta .resumen-ev:empty { display: none; }
+.tarjeta .pie { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--texto2); flex-wrap: wrap; }
+.tarjeta .pie span { flex: 1; }
+.tarjeta .pie a, .tarjeta .pie button { font: inherit; color: var(--texto); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+
+/* Login */
+.acceso { position: fixed; inset: 0; margin: auto; width: min(380px, 90vw); height: fit-content; z-index: 20; padding: 22px; border-radius: 18px;
+  background: var(--halo); backdrop-filter: blur(20px); border: 1px solid var(--filete); box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+  font: 14px/1.4 "Space Grotesk", system-ui; color: var(--texto); }
+.acceso h2 { font: 700 20px/1 "Archivo", system-ui; margin: 0 0 8px; }
+.acceso input { width: 100%; box-sizing: border-box; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--filete); margin: 8px 0; }
+.acceso button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 10px; border: 0; background: var(--texto); color: var(--fondo); cursor: pointer; }
+.acceso .error { color: #B42318; min-height: 1em; }
+.cabeza { right: calc(clamp(320px, 28vw, 460px) + 40px); }
+@media (max-width: 760px) {
+  .actividad { left: 8px; right: 8px; width: auto; top: auto; height: 42vh; }
+  .actividad.expandida { width: auto; height: 80vh; }
+  .plantas { top: auto; bottom: calc(42vh + 18px); transform: none; flex-direction: row; flex-wrap: wrap; }
+}
+
+/* Not logged in: only the token form (no empty panel pretending to connect, no floor buttons). */
+.sin-sesion .actividad, .sin-sesion .plantas, .sin-sesion .zoom, .sin-sesion .resumen, .sin-sesion .rotulos { display: none !important; }
