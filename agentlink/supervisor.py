@@ -32,6 +32,7 @@ from typing import Any
 
 from .adapters import ADAPTERS
 from .local import VERSION, Api, ApiError, Store, load_config
+from .oscmd import batch_shim
 
 log = logging.getLogger("agentlink.supervisor")
 
@@ -296,13 +297,19 @@ class Supervisor:
     def _codex_resume(self, s: dict[str, Any], pending: list[dict[str, Any]], text: str) -> None:
         import tempfile
 
-        with tempfile.NamedTemporaryFile("r", suffix=".txt") as out:
-            cmd = ["codex", "exec", "resume", s["local_id"], "-o", out.name, text + "\n\nAnswer the message(s) directly; "
+        with tempfile.NamedTemporaryFile(
+            "r", suffix=".txt", delete=False
+        ) as out:  # closed: Windows lets codex write it
+            path = Path(out.name)
+        try:
+            cmd = ["codex", "exec", "resume", s["local_id"], "-o", str(path), text + "\n\nAnswer the message(s) directly; "
                    "your final message will be posted as your reply."]  # fmt: skip
             with self.keepalive():
                 ok = _run(cmd, s["cwd"] or None, 600).returncode == 0
             if ok:
-                self._relay(s, pending, open(out.name, encoding="utf-8").read(), "codex exec resume")  # noqa: SIM115
+                self._relay(s, pending, path.read_text("utf-8"), "codex exec resume")
+        finally:
+            path.unlink(missing_ok=True)
 
     def _opencode_run(self, s: dict[str, Any], pending: list[dict[str, Any]], text: str) -> None:
         cmd = ["opencode", "run", "--session", s["local_id"], text + "\n\nAnswer the message(s) directly; your final "
@@ -477,8 +484,11 @@ class Supervisor:
 
 def _run(cmd: list[str], cwd: str | None, timeout: float) -> subprocess.CompletedProcess[str]:
     """Run a runtime turn; a timeout or a missing binary is a failed turn (returncode != 0), never a supervisor crash."""
+    if batch_shim(cmd[0]):  # cmd.exe would re-parse the message text in the arguments (see oscmd.batch_shim)
+        return subprocess.CompletedProcess(cmd, 126, "", f"refusing to pass message text to the batch file of {cmd[0]}")
     try:
-        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False)
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=timeout, check=False)  # fmt: skip
     except subprocess.TimeoutExpired as e:
         out = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
         return subprocess.CompletedProcess(cmd, 124, out, f"timed out after {timeout}s")
