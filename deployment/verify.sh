@@ -66,6 +66,20 @@ api POST /api/channels/ops/messages -d '{"body":"after backup"}' >/dev/null
 { [ "$(count)" = "$N_BK" ]; } || fail "restore: back to the backup's $N_BK messages, service healthy, old db kept aside"; ok "restore: back to the backup's $N_BK messages, service healthy, old db kept aside"
 { ls -d "$AO_DATA"/replaced-* >/dev/null; } || fail "replaced database kept aside"; ok "replaced database kept aside"
 
+# restore refuses to touch the database if the service cannot be stopped
+mkdir -p "$S/shim" && printf '#!/bin/sh\nfor a; do [ "$a" = stop ] && exit 1; done\nexec /usr/bin/systemctl "$@"\n' > "$S/shim/systemctl" && chmod +x "$S/shim/systemctl"
+N_NOW=$(count)
+if PATH="$S/shim:$PATH" "$D/restore.sh" "$BK" --yes > "$S/restore-nostop.log" 2>&1; then fail "restore must abort when the service cannot be stopped"; fi
+{ [ "$(count)" = "$N_NOW" ] && healthy; } || fail "restore aborted without changes when stop failed"; ok "restore aborted without changes when stop failed"
+# a backup that is intact but leaves the service unhealthy is rolled back automatically
+gzip -dc "$BK" > "$S/bad.db" && python3 -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('DROP TABLE meta'); c.commit()" "$S/bad.db"
+gzip -c "$S/bad.db" > "$S/bad.db.gz" && (cd "$S" && sha256sum bad.db.gz > bad.db.gz.sha256)
+api POST /api/channels/ops/messages -d '{"body":"before bad restore"}' >/dev/null
+N_NOW=$(count)
+if "$D/restore.sh" "$S/bad.db.gz" --yes > "$S/restore-bad.log" 2>&1; then fail "restore of an unhealthy backup must fail"; fi
+{ grep -q "previous database is live again" "$S/restore-bad.log" && healthy && [ "$(count)" = "$N_NOW" ]; } || { cat "$S/restore-bad.log"; fail "unhealthy restore rolled back"; }
+ok "unhealthy restore rolled back automatically, data intact ($N_NOW messages)"
+
 # Fake Healthchecks.io endpoint: counts pings.
 python3 - "$S/pings" > /dev/null 2>&1 <<'PY' &
 import http.server, sys

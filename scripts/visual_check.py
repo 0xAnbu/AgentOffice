@@ -111,6 +111,41 @@ async def realtime_checks(c: CDP, url: str, admin: str, channel: str) -> dict:
     return r
 
 
+def _first_int(text: str) -> int:
+    import re
+
+    m = re.search(r"\d+", text or "")
+    return int(m.group()) if m else 0
+
+
+async def chat_scroll_checks(c: CDP, url: str, admin: str, channel: str) -> dict:
+    """/chat scroll QoS: follow new messages only while the reader is at the bottom; otherwise keep the view and offer
+    a floating button with the count of new messages; clicking it jumps down and resumes following."""
+    sc = "document.querySelector('section.feed')"
+    at_bottom = f"({sc}.scrollHeight - {sc}.scrollTop - {sc}.clientHeight < 48)"
+    r: dict = {"starts_at_bottom": await c.js(at_bottom)}
+    await c.js(f"{sc}.scrollTop = 0; 1")
+    await asyncio.sleep(0.5)
+    for i in range(2):
+        _post(url, admin, channel, f"scroll test {i}")
+    await asyncio.sleep(3)
+    r["view_kept_while_reading_history"] = await c.js(f"{sc}.scrollTop < 50")
+    r["button_text"] = await c.js("(b => b.hidden ? null : b.textContent)(document.getElementById('to-bottom'))")
+    await c.js("document.getElementById('to-bottom').click(); 1")
+    await asyncio.sleep(0.5)
+    r["button_jumps_to_bottom"] = await c.js(f"{at_bottom} && document.getElementById('to-bottom').hidden")
+    _post(url, admin, channel, "scroll test after resume")
+    await asyncio.sleep(3)
+    r["follows_again"] = await c.js(f"{at_bottom} && document.getElementById('to-bottom').hidden")
+    r["last_visible_is_newest"] = await c.js(
+        "(() => { const li = document.querySelector('#feed li:last-child .body');"
+        " return !!li && li.textContent.includes('after resume'); })()"
+    )
+    r["ok"] = bool(r["view_kept_while_reading_history"] and r["button_text"] and _first_int(r["button_text"]) >= 2
+                   and r["button_jumps_to_bottom"] and r["follows_again"] and r["last_visible_is_newest"])  # fmt: skip
+    return r
+
+
 async def run(url: str, token: str, out: Path, wait: float, admin: str | None = None, channel: str = "demo-dev") -> int:
     out.mkdir(parents=True, exist_ok=True)
     prof = tempfile.mkdtemp(prefix="cdp-")
@@ -133,6 +168,12 @@ async def run(url: str, token: str, out: Path, wait: float, admin: str | None = 
                 await c.call(f"{d}.enable")
             await c.call("Page.navigate", url=url + "/?tema=" + THEME)
             await asyncio.sleep(1.5)
+            anon = await c.js(
+                "(() => { const shown = s => { const e = document.querySelector(s);"
+                " return !!e && getComputedStyle(e).display !== 'none'; };"
+                " return {login: shown('#acceso'), panel: shown('.actividad'), floors: shown('.plantas'), zoom: shown('.zoom')}; })()"
+            )
+            await c.shot(out / "sin-sesion.png")
             await c.js(f"sessionStorage.setItem('agentoffice_token', {json.dumps(token)}); location.reload(); 1")
             await asyncio.sleep(wait)
             report = {
@@ -140,6 +181,10 @@ async def run(url: str, token: str, out: Path, wait: float, admin: str | None = 
                 "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "scene": await c.js("window.oficina3d && window.oficina3d.resumen()"),
             }
+            report["anonymous"] = anon
+            report["anonymous_ok"] = bool(
+                anon and anon["login"] and not (anon["panel"] or anon["floors"] or anon["zoom"])
+            )
             report["conexion"] = await c.js("document.querySelector('.conexion')?.textContent")
             report["tarjetas"] = await c.js("document.querySelectorAll('.tarjeta').length")
             report["login_visible"] = await c.js("!document.querySelector('#acceso').hidden")
@@ -158,6 +203,9 @@ async def run(url: str, token: str, out: Path, wait: float, admin: str | None = 
                 print("realtime:", json.dumps(report["realtime"], ensure_ascii=False))
             await c.call("Page.navigate", url=url + "/chat")
             await asyncio.sleep(4)
+            if admin:
+                report["chat_scroll"] = await chat_scroll_checks(c, url, admin, channel)
+                print("chat_scroll:", json.dumps(report["chat_scroll"], ensure_ascii=False))
             report["chat"] = await c.js(
                 "({canvas: !!document.querySelector('canvas'), mensajes: document.querySelectorAll('#feed li').length, title: document.title})"
             )
@@ -182,7 +230,7 @@ async def run(url: str, token: str, out: Path, wait: float, admin: str | None = 
             (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
             print(
                 json.dumps(
-                    {k: report[k] for k in ("conexion", "tarjetas", "errors", "http_errors", "chat")},
+                    {k: report[k] for k in ("anonymous", "conexion", "tarjetas", "errors", "http_errors", "chat")},
                     ensure_ascii=False,
                     indent=1,
                 )
@@ -199,6 +247,8 @@ async def run(url: str, token: str, out: Path, wait: float, admin: str | None = 
                 and sc.get("pisos")
                 and not report["login_visible"]
                 and report.get("realtime", {"ok": True})["ok"]
+                and report["anonymous_ok"]
+                and report.get("chat_scroll", {"ok": True})["ok"]
             )
             return 0 if ok else 1
     finally:

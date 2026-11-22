@@ -381,3 +381,128 @@ def test_mcp_array_params_is_invalid_params(world: World) -> None:
         "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": [1]}, headers=world.admin
     )
     assert r.status_code == 200 and r.json()["error"]["code"] == -32602
+
+
+# == second review (2026-11-22): findings 5, 6, 9, 10 (11 and the anonymous panel: deployment/verify.sh, visual_check) ==
+def _codex_participant(
+    tmp_path: Path, url: str, office: Office, monkeypatch: pytest.MonkeyPatch, script: str, **cfg: Any
+) -> tuple[Participant, Participant]:
+    _fake_codex(tmp_path, monkeypatch, script)
+    asker = Participant(tmp_path, url, office.tokens["ben-claude"], "alpha", monkeypatch, "dev02-laptop")
+    codex = Participant(tmp_path, url, office.tokens["dani-codex"], "alpha", monkeypatch, "dev04-laptop")
+    codex.sup.cfg["runtime"] = "codex"
+    codex.store.put("adapter.codex", {"headless": True, "workdir": str(tmp_path), **cfg})
+    return asker, codex
+
+
+def test_heartbeats_continue_during_a_long_headless_turn(
+    tmp_path: Path,
+    server: str,  # noqa: F811 (fixture)
+    office: Office,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asker, codex = _codex_participant(
+        tmp_path, server, office, monkeypatch,
+        'sleep 1.5\nwhile [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done\nprintf done > "$out"\n',
+    )  # fmt: skip
+    codex.sup.keepalive_every = 0.2
+    beats: list[float] = []
+    orig = codex.sup.session_beats
+    monkeypatch.setattr(codex.sup, "session_beats", lambda force=False: beats.append(1) or orig(force=force))
+    asker.api.call("POST", "/api/channels/alpha-dev/messages", {"body": "@dani-codex slow one"})
+    before = len(beats)
+    res = codex.sup.once(wait=0)["headless"]
+    during = len(beats) - before - 1  # minus the regular beat of this iteration
+    assert res["processed"] and res["seconds"] >= 1.5
+    assert during >= 4, f"only {during} heartbeats while the 1.5 s turn blocked the loop"
+    s = office.c.get("/api/sessions", params={"all": 1}, headers=office.h("dani-codex")).json()
+    turn = next(x for x in s if x["id"] == res["session_id"])
+    assert turn["last_heartbeat_at"] - turn["created_at"] >= 1000  # the turn's own session was kept alive too
+
+
+def test_failed_headless_turn_is_retried_a_bounded_number_of_times(
+    tmp_path: Path,
+    server: str,  # noqa: F811 (fixture)
+    office: Office,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runs = tmp_path / "runs"
+    asker, codex = _codex_participant(
+        tmp_path, server, office, monkeypatch, f'echo run >> "{runs}"\nexit 1\n', retries=2, retry_after=0
+    )
+    q = asker.api.call("POST", "/api/channels/alpha-dev/messages", {"body": "@dani-codex will fail"})
+    outcomes = [codex.sup.once(wait=0)["headless"] for _ in range(4)]
+    assert [o["retry"][str(q["id"])] for o in outcomes[:3]] == ["retry 1/2", "retry 2/2", "given up"]
+    assert outcomes[3] is None and runs.read_text().count("run") == 3  # bounded: 1 + 2 retries, then nothing
+    assert _deliv(office, q["id"]) == "injected_to_runtime"  # still pending, never a false processed
+
+
+def test_failed_headless_turn_succeeds_on_retry(
+    tmp_path: Path,
+    server: str,  # noqa: F811 (fixture)
+    office: Office,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flag = tmp_path / "second"
+    script = (
+        f'if [ ! -e "{flag}" ]; then touch "{flag}"; exit 1; fi\n'
+        'while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done\nprintf "recovered answer" > "$out"\n'
+    )
+    asker, codex = _codex_participant(tmp_path, server, office, monkeypatch, script, retry_after=0)
+    q = asker.api.call("POST", "/api/channels/alpha-dev/messages", {"body": "@dani-codex flaky"})
+    assert codex.sup.once(wait=0)["headless"]["exit_code"] == 1
+    assert codex.sup.once(wait=0)["headless"]["processed"] == [q["id"]]
+    assert _deliv(office, q["id"]) == "processed"
+    assert codex.store.get("headless.retry") == {}
+
+
+def test_timed_out_headless_turn_is_not_retried(
+    tmp_path: Path,
+    server: str,  # noqa: F811 (fixture)
+    office: Office,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asker, codex = _codex_participant(tmp_path, server, office, monkeypatch, "sleep 5\n", timeout=1, retry_after=0)
+    q = asker.api.call("POST", "/api/channels/alpha-dev/messages", {"body": "@dani-codex huge"})
+    res = codex.sup.once(wait=0)["headless"]
+    assert res["exit_code"] == 124 and res["retry"][str(q["id"])] == "timeout: not retried"
+    assert codex.sup.once(wait=0)["headless"] is None
+
+
+def test_restart_recovery_pages_through_all_missing_messages(
+    tmp_path: Path,
+    server: str,  # noqa: F811 (fixture)
+    office: Office,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ben = Participant(tmp_path, server, office.tokens["ben-claude"], "alpha", monkeypatch, "dev02-laptop")
+    cris = Participant(tmp_path, server, office.tokens["cris-opencode"], "alpha", monkeypatch, "dev03-laptop")
+    ids = [
+        ben.api.call("POST", "/api/channels/alpha-dev/messages", {"body": f"@cris-opencode n{i}"})["id"]
+        for i in range(230)
+    ]
+    cris.store.set_cursor("inbox", ids[-1])  # local rows lost below the cursor (e.g. an old state.db restored)
+    assert cris.sup.reconcile_pending() == 230  # more than one inbox page (200)
+    assert {r["message_id"] for r in cris.store.q("SELECT message_id FROM inbox")} == set(ids)
+
+
+def test_local_delivery_state_never_regresses_under_concurrent_writers(tmp_path: Path) -> None:
+    store = Store(tmp_path / "state.db")
+    ids = list(range(1, 201))
+    store.store_messages([{"id": i, "body": "x"} for i in ids])
+
+    def writer(state: str) -> None:
+        s = Store(tmp_path / "state.db")  # separate connections, like hooks and the supervisor
+        for i in ids:
+            s.mark([i], state)
+
+    threads = [
+        threading.Thread(target=writer, args=(st,)) for st in ("processed", "injected_to_runtime", "acknowledged")
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert {r["state"] for r in store.q("SELECT state FROM inbox")} == {"processed"}
+    store.mark(ids, "injected_to_runtime")  # a late, lower report is a no-op
+    assert {r["state"] for r in store.q("SELECT state FROM inbox")} == {"processed"}

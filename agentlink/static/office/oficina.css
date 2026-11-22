@@ -376,3 +376,6 @@ body {
   .actividad.expandida { width: auto; height: 80vh; }
   .plantas { top: auto; bottom: calc(42vh + 18px); transform: none; flex-direction: row; flex-wrap: wrap; }
 }
+
+/* Not logged in: only the token form (no empty panel pretending to connect, no floor buttons). */
+.sin-sesion .actividad, .sin-sesion .plantas, .sin-sesion .zoom, .sin-sesion .resumen, .sin-sesion .rotulos { display: none !important; }

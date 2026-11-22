@@ -33,13 +33,29 @@ if [ "${2:-}" != "--yes" ]; then
   read -r -p "Replace $DB with $BK (the current database is kept aside)? [y/N] " a
   [ "$a" = y ] || die "aborted"
 fi
-sctl stop agent-office.service || true
+# The service must really be stopped: moving the database (and its WAL) under a running process would leave it
+# writing to the files set aside.
+sctl stop agent-office.service || die "could not stop agent-office.service; nothing was changed"
+if sctl is-active --quiet agent-office.service; then die "agent-office.service is still running; nothing was changed"; fi
 ASIDE="$(dirname "$DB")/replaced-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$ASIDE"
 for f in "$DB" "$DB-wal" "$DB-shm"; do [ -e "$f" ] && mv "$f" "$ASIDE/"; done
 install -m 600 "$WORK/restore.db" "$DB"
 if [ "$(id -u)" = 0 ] && id "$AO_USER" >/dev/null 2>&1; then chown -R "$AO_USER:$AO_USER" "$(dirname "$DB")"; fi
 sctl reset-failed agent-office.service 2>/dev/null || true
-sctl start agent-office.service
-wait_healthy 40 || die "service unhealthy after restore; previous database kept in $ASIDE"
-log "restored $BK; previous database kept in $ASIDE"
+if sctl start agent-office.service && wait_healthy 40; then
+  log "restored $BK; previous database kept in $ASIDE"
+  exit 0
+fi
+# Unhealthy with the restored data: put the previous database back so the service is not left down.
+log "service unhealthy after restore: putting the previous database back"
+sctl stop agent-office.service || true
+FAILED="$(dirname "$DB")/failed-restore-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$FAILED"
+for f in "$DB" "$DB-wal" "$DB-shm"; do [ -e "$f" ] && mv "$f" "$FAILED/"; done
+for f in "$ASIDE"/*; do [ -e "$f" ] && mv "$f" "$(dirname "$DB")/"; done
+if [ "$(id -u)" = 0 ] && id "$AO_USER" >/dev/null 2>&1; then chown -R "$AO_USER:$AO_USER" "$(dirname "$DB")"; fi
+sctl reset-failed agent-office.service 2>/dev/null || true
+sctl start agent-office.service || true
+wait_healthy 40 && die "restore rolled back: the previous database is live again (restored copy kept in $FAILED)"
+die "restore rolled back but the service is still unhealthy; inspect: journalctl -u agent-office (restored copy in $FAILED)"

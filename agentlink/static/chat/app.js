@@ -62,15 +62,52 @@ function item(m) {
   return li;
 }
 
-function pintarFeed() {
+// Scroll QoS: new messages scroll the feed to the bottom only while the reader is already there. If they scrolled
+// up to read history, the view stays put and a floating button counts the new messages; clicking it (or scrolling
+// back down) jumps to the bottom and resumes following new messages.
+const scroller = document.querySelector('section.feed');
+const scrollState = { pegado: true, sinLeer: 0, hashHecho: false };
+const alFondo = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
+function pintarBoton() {
+  const b = $('to-bottom');
+  b.hidden = scrollState.pegado;
+  b.textContent = scrollState.sinLeer ? `↓ ${scrollState.sinLeer} ${scrollState.sinLeer === 1 ? 'mensaje nuevo' : 'mensajes nuevos'}` : '↓ Ir al final';
+}
+function bajar() {
+  scroller.scrollTop = scroller.scrollHeight;
+  Object.assign(scrollState, { pegado: true, sinLeer: 0 });
+  pintarBoton();
+}
+scroller.addEventListener('scroll', () => {
+  scrollState.pegado = alFondo();
+  if (scrollState.pegado) scrollState.sinLeer = 0;
+  pintarBoton();
+});
+$('to-bottom').addEventListener('click', bajar);
+
+function pintarFeed({ older = false, nuevos = 0 } = {}) {
+  const arriba = scroller.scrollTop, desdeAbajo = scroller.scrollHeight - scroller.scrollTop;
   const lista = [...st.msgs.values()].sort((a, b) => a.id - b.id).filter(visible);
   $('feed').replaceChildren(...lista.map(item));
   $('feed-title').textContent = st.thread ? `Hilo #${st.thread}` : st.channel ? `#${st.channel}` : `Conversaciones${st.project ? ` · ${st.project}` : ''}`;
   $('back').hidden = !(st.thread || st.channel || st.agent);
   const h = location.hash.match(/m=(\d+)/);
   const objetivo = h && document.getElementById(`m${h[1]}`);
-  if (objetivo) { objetivo.classList.add('target'); objetivo.scrollIntoView({ block: 'center' }); }
-  else $('feed').lastElementChild?.scrollIntoView({ block: 'end' });
+  if (objetivo) objetivo.classList.add('target');
+  if (objetivo && !scrollState.hashHecho) {  // a link to one message: show it once, then behave normally
+    scrollState.hashHecho = true;
+    objetivo.scrollIntoView({ block: 'center' });
+    scrollState.pegado = alFondo();
+  } else if (scrollState.pegado) {
+    bajar();
+    return;
+  } else if (older) {
+    scroller.scrollTop = scroller.scrollHeight - desdeAbajo;  // older page prepended: keep what the reader sees
+  } else {
+    scroller.scrollTop = arriba;
+    scrollState.sinLeer += nuevos;
+  }
+  pintarBoton();
 }
 
 async function cargar(older = false) {
@@ -81,18 +118,18 @@ async function cargar(older = false) {
   const path = st.thread && st.channel ? `/api/channels/${encodeURIComponent(st.channel)}/messages?${q}&thread=${st.thread}`
     : st.channel ? `/api/channels/${encodeURIComponent(st.channel)}/messages?${q}` : `/api/feed?${q}`;
   const r = await api(path);
-  if (!older) st.msgs.clear();
+  if (!older) { st.msgs.clear(); scrollState.pegado = true; scrollState.sinLeer = 0; }  // new view: start at the end
   for (const m of r.messages) st.msgs.set(m.id, m);
   st.oldest = Math.min(...[...st.msgs.keys(), Infinity]);
   $('older').hidden = r.messages.length < 100;
-  pintarFeed();
+  pintarFeed({ older });
 }
 
 async function nuevos() {
   const ultimo = Math.max(0, ...st.msgs.keys());
   const r = await api(`/api/feed?after=${ultimo}&limit=200${st.project ? `&project=${st.project}` : ''}`);
   for (const m of r.messages) st.msgs.set(m.id, m);
-  if (r.messages.length) pintarFeed();
+  if (r.messages.length) pintarFeed({ nuevos: r.messages.filter(visible).length });
 }
 
 function abrirHilo(id) {

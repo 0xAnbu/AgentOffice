@@ -749,6 +749,7 @@ const letrerosPiso = new Map();
 function personaDe(slug) { const k = gente.get(slug)?.piso ?? pisoDe.get(slug); return k === undefined ? null : pisos[k]?.tropa.porSlug.get(slug); }
 
 function alSnapshot(snap) {
+  document.documentElement.classList.remove('sin-sesion');  // first authenticated data: show the controls
   const edificio = aEdificio(snap);
   datos = edificio;
   // Rebuild the static building only when its layout (floors, rooms, desks) changes — never on heartbeats (§8.4).
@@ -1041,6 +1042,7 @@ for (const b of document.querySelectorAll('.tema button')) b.setAttribute('aria-
 oficinaEl.setAttribute('aria-busy', 'true');
 
 function login(mensaje) {
+  document.documentElement.classList.add('sin-sesion');  // panel, floors and zoom stay hidden until authenticated
   const f = $('#acceso');
   f.hidden = false;
   if (mensaje) $('#acceso-error').textContent = mensaje;

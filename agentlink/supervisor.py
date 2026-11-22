@@ -23,7 +23,10 @@ import logging
 import os
 import signal
 import subprocess
+import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +51,32 @@ class Supervisor:
         self.last_device = 0.0
         self.running = True
         self.status: dict[str, Any] = {"started": time.time(), "errors": 0}
+        self.keepalive_every = SESSION_EVERY  # liveness cadence while a long runtime turn blocks the loop
+
+    @contextmanager
+    def keepalive(self, *extra_sessions: str) -> Iterator[None]:
+        """Keep device/session heartbeats and lease renewals going while the loop is blocked in a runtime turn
+        (a turn can take minutes; sessions expire after 90 s). Also beats the turn's own session(s)."""
+        stop = threading.Event()
+
+        def beat() -> None:
+            while not stop.wait(self.keepalive_every):
+                try:
+                    self.device_beat(force=True)
+                    self.session_beats(force=True)
+                    self.renew_leases()
+                    for sid in extra_sessions:
+                        self.api.call("POST", f"/api/sessions/{sid}/heartbeat", {"state": "executing"})
+                except Exception as e:  # keep beating; the main loop reports errors
+                    log.warning("keepalive beat failed: %s", e)
+
+        t = threading.Thread(target=beat, name="agentlink-keepalive", daemon=True)
+        t.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            t.join(5)
 
     # -- receive -------------------------------------------------------------------------------------
     def receive(self, wait: int | None = None) -> list[int]:
@@ -65,11 +94,20 @@ class Supervisor:
         """After a restart: anything the server still considers pending but we never stored is re-read."""
         pend = self.api.call("GET", "/api/deliveries/pending", query={"limit": 500}).get("pending", [])
         have = {r["message_id"] for r in self.store.q("SELECT message_id FROM inbox")}
-        missing = [int(p["message_id"]) for p in pend if int(p["message_id"]) not in have]
+        missing = {int(p["message_id"]) for p in pend if int(p["message_id"]) not in have}
         if not missing:
             return 0
-        res = self.api.call("GET", "/api/inbox", query={"after": min(missing) - 1, "limit": 200})
-        return len(self.store.store_messages([m for m in res.get("messages", []) if int(m["id"]) in missing]))
+        recovered, after, top = 0, min(missing) - 1, max(missing)
+        while missing and after < top:  # page through the inbox until every pending gap is filled
+            res = self.api.call("GET", "/api/inbox", query={"after": after, "limit": 200})
+            msgs = res.get("messages", [])
+            if not msgs:
+                break
+            found = [m for m in msgs if int(m["id"]) in missing]
+            recovered += len(self.store.store_messages(found))
+            missing -= {int(m["id"]) for m in found}
+            after = int(res.get("next_after") or msgs[-1]["id"])
+        return recovered
 
     def flush_reports(self) -> None:
         """Confirm local states to the server. Never raises: one bad receipt must not block the others.
@@ -261,17 +299,22 @@ class Supervisor:
         with tempfile.NamedTemporaryFile("r", suffix=".txt") as out:
             cmd = ["codex", "exec", "resume", s["local_id"], "-o", out.name, text + "\n\nAnswer the message(s) directly; "
                    "your final message will be posted as your reply."]  # fmt: skip
-            if _run(cmd, s["cwd"] or None, 600).returncode == 0:
+            with self.keepalive():
+                ok = _run(cmd, s["cwd"] or None, 600).returncode == 0
+            if ok:
                 self._relay(s, pending, open(out.name, encoding="utf-8").read(), "codex exec resume")  # noqa: SIM115
 
     def _opencode_run(self, s: dict[str, Any], pending: list[dict[str, Any]], text: str) -> None:
         cmd = ["opencode", "run", "--session", s["local_id"], text + "\n\nAnswer the message(s) directly; your final "
                "message will be posted as your reply."]  # fmt: skip
-        res = _run(cmd, s["cwd"] or None, 600)
+        with self.keepalive():
+            res = _run(cmd, s["cwd"] or None, 600)
         if res.returncode == 0:
             self._relay(s, pending, res.stdout, "opencode run --session")
 
-    def exec_deliver(self, runtime: str, workdir: str, timeout: int = 600) -> dict[str, Any]:
+    def exec_deliver(
+        self, runtime: str, workdir: str, timeout: int = 600, pending: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         """Deliver pending messages by starting a headless turn of a runtime that has no trusted hooks.
 
         Codex: ``codex exec`` (read-only sandbox, no network) and OpenCode: ``opencode run``. The runtime
@@ -279,12 +322,13 @@ class Supervisor:
         own token) and records ``processed`` with the reply id as evidence. Nothing is reported as processed
         if the runtime produced no answer.
         """
-        import tempfile
 
         from .hooks import MAX_INJECT, render
 
         # one turn answers at most what it is shown; the rest stays pending for the next turn
-        pending = [m for m in self.store.pending(only_new=True) if int(m["message_id"]) > 0][:MAX_INJECT]
+        if pending is None:
+            pending = [m for m in self.store.pending(only_new=True) if int(m["message_id"]) > 0]
+        pending = pending[:MAX_INJECT]
         if not pending:
             return {"delivered": 0}
 
@@ -302,6 +346,26 @@ class Supervisor:
         self.store.set_reported(ids, "injected_to_runtime")
         self.api.call("POST", f"/api/sessions/{sess['id']}/heartbeat", {"state": "executing", "progress": True})
         started = time.time()
+        with self.keepalive(sess["id"]):
+            res, answer = self._headless_turn(runtime, workdir, timeout, text)
+        result: dict[str, Any] = {"runtime": runtime, "session_id": sess["id"], "exit_code": res.returncode,
+                                  "seconds": round(time.time() - started, 1), "answer": answer.strip()[:2000]}  # fmt: skip
+        if answer.strip() and res.returncode == 0:
+            self._relay({"server_id": sess["id"], "runtime": runtime}, pending, answer, f"{runtime} exec")
+            result["processed"] = ids
+            self._retry_forget(ids)
+        else:  # stays injected_to_runtime: pending and recoverable, never a false "processed"
+            result["stderr_tail"] = (res.stderr or "")[-800:]
+            result["stdout_tail"] = (res.stdout or "")[-800:]
+            result["retry"] = self._retry_schedule(runtime, ids, res.returncode)
+        self.api.call("POST", f"/api/sessions/{sess['id']}/end", {"reason": "headless turn finished"})
+        return result
+
+    def _headless_turn(
+        self, runtime: str, workdir: str, timeout: int, text: str
+    ) -> tuple[subprocess.CompletedProcess[str], str]:
+        import tempfile
+
         if runtime == "codex":
             with tempfile.NamedTemporaryFile("r", suffix=".txt", delete=False) as out:
                 path = out.name
@@ -318,16 +382,49 @@ class Supervisor:
             answer = _opencode_text(res.stdout)
         else:
             raise ValueError(f"no headless delivery for {runtime}")
-        result: dict[str, Any] = {"runtime": runtime, "session_id": sess["id"], "exit_code": res.returncode,
-                                  "seconds": round(time.time() - started, 1), "answer": answer.strip()[:2000]}  # fmt: skip
-        if answer.strip() and res.returncode == 0:
-            self._relay({"server_id": sess["id"], "runtime": runtime}, pending, answer, f"{runtime} exec")
-            result["processed"] = ids
-        else:  # stays injected_to_runtime: pending and recoverable, never a false "processed"
-            result["stderr_tail"] = (res.stderr or "")[-800:]
-            result["stdout_tail"] = (res.stdout or "")[-800:]
-        self.api.call("POST", f"/api/sessions/{sess['id']}/end", {"reason": "headless turn finished"})
-        return result
+        return res, answer
+
+    # -- bounded retry of failed headless turns -------------------------------------------------------
+    RETRY_KEY = "headless.retry"
+
+    def _retry_schedule(self, runtime: str, ids: list[int], code: int) -> dict[str, Any]:
+        """A turn that failed to run or answered nothing is retried a bounded number of times with growing delays
+        (each retry spends quota). A timeout is not retried: the same request would very likely time out again."""
+        cfg = self.store.get(f"adapter.{runtime}", {}) or {}
+        retries, base = int(cfg.get("retries", 2)), float(cfg.get("retry_after", 300))
+        book = self.store.get(self.RETRY_KEY, {}) or {}
+        out: dict[str, Any] = {}
+        for mid in ids:
+            n = int((book.get(str(mid)) or {}).get("n", 0)) + 1
+            if code == 124 or n > retries:
+                book.pop(str(mid), None)
+                out[str(mid)] = "given up" if code != 124 else "timeout: not retried"
+                log.warning("headless delivery of #%s abandoned (%s); it stays pending", mid, out[str(mid)])
+            else:
+                book[str(mid)] = {"n": n, "at": time.time() + base * 2 ** (n - 1)}
+                out[str(mid)] = f"retry {n}/{retries}"
+        self.store.put(self.RETRY_KEY, book)
+        return out
+
+    def _retry_forget(self, ids: list[int]) -> None:
+        book = self.store.get(self.RETRY_KEY, {}) or {}
+        if any(book.pop(str(i), None) for i in ids):
+            self.store.put(self.RETRY_KEY, book)
+
+    def _retry_due(self) -> list[dict[str, Any]]:
+        book = self.store.get(self.RETRY_KEY, {}) or {}
+        due = [int(k) for k, v in book.items() if float(v.get("at", 0)) <= time.time()]
+        if not due:
+            return []
+        rows = self.store.q(
+            f"SELECT * FROM inbox WHERE state = 'injected_to_runtime' AND message_id IN ({','.join('?' * len(due))}) "
+            "ORDER BY priority, message_id",
+            tuple(due),
+        )
+        gone = set(due) - {int(r["message_id"]) for r in rows}  # answered meanwhile (e.g. by hand)
+        if gone:
+            self._retry_forget(sorted(gone))
+        return rows
 
     # -- loop ----------------------------------------------------------------------------------------
     def once(self, wait: int | None = None) -> dict[str, Any]:
@@ -343,17 +440,21 @@ class Supervisor:
 
     def headless_if_enabled(self) -> dict[str, Any] | None:
         """Opt-in autonomous delivery for runtimes without trusted hooks (codex, opencode): when NEW messages are
-        pending and no hooked session of that runtime is running, answer them with one headless turn. Messages that
-        were already injected are never re-run (no retry storm); a failed turn leaves them pending, not processed."""
+        pending and no hooked session of that runtime is running, answer them with one headless turn. A failed turn
+        leaves them pending (never processed) and is retried at most `retries` times (default 2) after growing delays
+        (`retry_after`, default 300 s); timeouts are not retried. Heartbeats keep running during the turn."""
         runtime = self.cfg.get("runtime")
         if runtime not in ("codex", "opencode"):
             return None
         cfg = self.store.get(f"adapter.{runtime}", {}) or {}
         if not cfg.get("headless") or any(s["runtime"] == runtime for s in self.store.live_sessions()):
             return None
-        if not [m for m in self.store.pending(only_new=True) if int(m["message_id"]) > 0]:
+        todo = [m for m in self.store.pending(only_new=True) if int(m["message_id"]) > 0] or self._retry_due()
+        if not todo:
             return None
-        return self.exec_deliver(runtime, cfg.get("workdir") or os.getcwd(), timeout=int(cfg.get("timeout") or 300))
+        return self.exec_deliver(
+            runtime, cfg.get("workdir") or os.getcwd(), timeout=int(cfg.get("timeout") or 300), pending=todo
+        )
 
     def run_forever(self) -> None:
         signal.signal(signal.SIGTERM, lambda *_: setattr(self, "running", False))

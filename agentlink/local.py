@@ -240,18 +240,19 @@ class Store:
         via: str | None = None,
         evidence: dict[str, Any] | None = None,
     ) -> None:
+        """Advance the local state, never backwards. One conditional UPDATE per message, so hooks and the supervisor
+        (separate processes) cannot interleave a read and a write and regress a state."""
         order = ["delivered_to_supervisor", "injected_to_runtime", "acknowledged", "processed"]
+        rank = "CASE state " + " ".join(f"WHEN '{st}' THEN {i}" for i, st in enumerate(order)) + " ELSE -1 END"
         with closing(self._conn()) as c:
             for mid in ids:
-                row = c.execute("SELECT state FROM inbox WHERE message_id = ?", (mid,)).fetchone()
-                if row is None or order.index(row["state"]) >= order.index(state):
-                    continue
                 c.execute(
                     "UPDATE inbox SET state = ?, injected_at = COALESCE(injected_at, CASE WHEN ? = 'injected_to_runtime' "
                     "THEN ? END), injected_session = COALESCE(?, injected_session), injected_via = COALESCE(?, injected_via), "
-                    "evidence = COALESCE(?, evidence) WHERE message_id = ?",
-                    (state, state, time.time(), session, via, json.dumps(evidence) if evidence else None, mid),
-                )
+                    f"evidence = COALESCE(?, evidence) WHERE message_id = ? AND {rank} < ?",
+                    (state, state, time.time(), session, via, json.dumps(evidence) if evidence else None, mid,
+                     order.index(state)),
+                )  # fmt: skip
 
     def unreported(self) -> list[dict[str, Any]]:
         """States reached locally but not yet confirmed to the server, grouped by (state, session, evidence)."""
