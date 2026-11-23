@@ -90,7 +90,7 @@ AO_USER_MODE=1 deployment/preflight.sh --config deployment/deployment.example.to
 
 Rules the tests enforce: no `set -x`, no secret on a command line or in an argv, and no secret in any output, log,
 state or report. Errors are raised as `DeployError(message, hint=...)` so the operator gets the fix, not only the
-symptom. On a distribution outside the support list (e.g. Kali), the preflight `Platform` row is `FAIL`; set
+symptom. On a distribution outside the tested list (e.g. Kali), the preflight `Platform` row is `WARN`; set
 `AO_OS_RELEASE` to a test `os-release` file to exercise the rest. Never run the bootstrap without `AO_USER_MODE=1` on a development
 machine: it is meant to change the system.
 

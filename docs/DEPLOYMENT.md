@@ -45,8 +45,13 @@ sudo deployment/install.sh --wizard                                # interactive
   system CAs for the MagicDNS name, never skipped. The API is checked through Serve (health, 401 without a token,
   200 with the admin token), then a WebSocket handshake. Exit code 0 only for `SUCCESS`, otherwise 1 (2 for a usage
   error).
-- **Supported:** Ubuntu ≥ 24.04, Debian 12/13, Raspberry Pi OS 64-bit on `x86_64`/`aarch64`; anything else is
-  refused by the preflight.
+- **Supported:** any Linux on `x86_64`/`aarch64` with a 64-bit userland and systemd. **Tested** (preflight `PASS`):
+  Ubuntu ≥ 24.04, Debian 12/13, Raspberry Pi OS 64-bit. Other distributions get a `WARN` and the same stages:
+  packages via `apt-get` when present, otherwise the required commands must already be installed. Tailscale comes from
+  its apt repository for Debian/Ubuntu and derivatives that declare `UBUNTU_CODENAME`/`DEBIAN_CODENAME`, otherwise it
+  must be installed by hand first (preflight `FAIL` with the link). Python comes from uv on glibc systems without a
+  Python ≥ 3.12. Refused: 32-bit, other architectures, a 32-bit userland on a 64-bit kernel,
+  non-Linux systems.
 - **Not covered by the verification:** reachability from other devices (see
   [Troubleshooting](TROUBLESHOOTING.md#reachability-from-other-devices)) and off-machine backups.
 
@@ -54,7 +59,7 @@ The sections below describe the same steps done by hand.
 
 ## Requirements
 
-- 64-bit Linux (`aarch64` or `x86_64`): Raspberry Pi OS 64-bit (Bookworm or later), Debian 12+, Ubuntu 24.04+. Any
+- 64-bit Linux (`aarch64` or `x86_64`). Tested: Raspberry Pi OS 64-bit (Bookworm or later), Debian 12+, Ubuntu 24.04+. Any
   Raspberry Pi able to run a 64-bit OS (Pi 3B+/4/5, Zero 2 W) should work; no Pi-specific API is used.
 - Python **≥ 3.12** with `venv` and SQLite **≥ 3.35** (checked by `install.sh`). Debian 12 ships Python 3.11: use
   Raspberry Pi OS/Debian 13 (Python 3.13) or install 3.12+ (e.g. `uv python install 3.12` and run `install.sh` with

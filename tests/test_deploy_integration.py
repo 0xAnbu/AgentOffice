@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 import subprocess
 import threading
@@ -441,6 +442,52 @@ def test_present_packages_are_not_reinstalled(tmp_path: Path, monkeypatch: pytes
     monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}:{os.environ['PATH']}")
     P.stage_dependencies(make_ctx(tmp_path))
     assert not log.exists()
+
+
+def test_without_apt_present_commands_are_enough(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(P, "has_apt", lambda: False)
+    P.stage_dependencies(make_ctx(tmp_path))  # git, curl, ip, python3 exist on the test machine
+
+
+def test_without_apt_missing_commands_are_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(P, "has_apt", lambda: False)
+    monkeypatch.setattr(P, "missing_commands", lambda: ["git"])
+    with pytest.raises(P.DeployError, match="required commands not found: git") as e:
+        P.stage_dependencies(make_ctx(tmp_path))
+    assert "package manager" in e.value.hint
+
+
+def untested_ctx(tmp_path: Path, release: dict[str, str], **kw: Any) -> Any:
+    ctx = make_ctx(tmp_path)
+    ctx.platform = P.detect_platform(release, "x86_64", **kw)
+    return ctx
+
+
+def test_untested_distribution_is_a_warning_not_a_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(P, "reach", lambda host, port=443, timeout=5: None)
+    ctx = untested_ctx(tmp_path, {"ID": "linuxmint", "ID_LIKE": "ubuntu debian", "UBUNTU_CODENAME": "noble"})
+    rows = {r[0]: r for r in P.precheck(ctx)}
+    assert rows["Platform"][1] == "WARN" and "not a tested distribution" in rows["Platform"][2]
+    assert "Tailscale install" not in rows  # the Ubuntu repository of the parent distribution is used
+
+
+def test_no_tailscale_repository_requires_a_manual_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(P, "reach", lambda host, port=443, timeout=5: None)
+    real_which = shutil.which
+    monkeypatch.setattr(P.shutil, "which", lambda c, *a, **k: None if c == "tailscale" else real_which(c, *a, **k))
+    ctx = untested_ctx(tmp_path, {"ID": "fedora", "VERSION_ID": "43"})
+    rows = {r[0]: r for r in P.precheck(ctx)}
+    assert rows["Tailscale install"][1] == P.FAIL and P.TAILSCALE_LINUX_DOC in rows["Tailscale install"][2]
+    with pytest.raises(P.DeployError, match="no official Tailscale apt repository") as e:
+        P.install_tailscale(ctx)
+    assert P.TAILSCALE_LINUX_DOC in e.value.hint
+
+
+def test_non_glibc_without_python_is_explained(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(P, "find_python", lambda ctx: None)
+    ctx = untested_ctx(tmp_path, {"ID": "alpine", "VERSION_ID": "3.22"}, libc="other")
+    with pytest.raises(P.DeployError, match="uv build needs glibc"):
+        P.stage_python(ctx)
 
 
 # -- uv download integrity -------------------------------------------------------------------------------------------

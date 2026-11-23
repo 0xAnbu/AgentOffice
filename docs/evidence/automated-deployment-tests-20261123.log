@@ -1,4 +1,4 @@
-# 2026-11-23T11:53:04Z base commit 5987a92 + uncommitted feat/automated-deployment working tree; Linux x86_64; Python 3.14.8; systemd 262
+# 2026-11-23T12:48:31Z base commit de0f554 + platform precheck change (working tree); Linux x86_64; Python 3.14.8; systemd 262
 $ .venv/bin/pytest -o addopts="" -v -p no:warnings tests/test_deploy_unit.py tests/test_deploy_integration.py tests/test_webhook_ingress.py
 ============================= test session starts ==============================
 platform linux -- Python 3.14.8, pytest-9.2.0, pluggy-1.7.0 -- /home/kali/Claude/AgentOffice/work/agentics/.venv/bin/python3
@@ -6,7 +6,7 @@ cachedir: .pytest_cache
 rootdir: /home/kali/Claude/AgentOffice/work/AgentOffice
 configfile: pyproject.toml
 plugins: anyio-4.16.0
-collecting ... collected 186 items
+collecting ... collected 195 items
 
 tests/test_deploy_unit.py::test_example_config_is_valid_and_matches_the_defaults PASSED
 tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[deploymnet]\nmode='production'-unknown section [deploymnet]] PASSED
@@ -64,20 +64,24 @@ tests/test_deploy_unit.py::test_secret_file_is_removed_on_error PASSED
 tests/test_deploy_unit.py::test_redaction_of_registered_and_pattern_secrets PASSED
 tests/test_deploy_unit.py::test_log_lines_are_redacted PASSED
 tests/test_deploy_unit.py::test_env_set_is_atomic_and_keeps_mode PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release0-x86_64-True-noble-ubuntu-True] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release1-aarch64-True-resolute-ubuntu-True] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release2-x86_64-False-jammy-ubuntu-True] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release3-x86_64-True-bookworm-debian-False] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release4-aarch64-True-trixie-debian-True] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release5-arm64-True-bookworm-debian-False] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release6-x86_64-False-bullseye-debian-False] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release7-x86_64-False-forky-debian-False] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release8-armv7l-False-bookworm-debian-False] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release9-armv7l-False--debian-False] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release10-x86_64-False--debian-False] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release11-x86_64-False--debian-False] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release12-x86_64-False--debian-False] PASSED
-tests/test_deploy_unit.py::test_platform_support_matrix[release13-x86_64-False--debian-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release0-x86_64-True-True-noble-ubuntu-True] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release1-aarch64-True-True-resolute-ubuntu-True] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release2-x86_64-True-False-jammy-ubuntu-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release3-x86_64-True-True-bookworm-debian-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release4-aarch64-True-True-trixie-debian-True] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release5-arm64-True-True-bookworm-debian-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release6-x86_64-True-False-bullseye-debian-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release7-x86_64-True-False-forky-debian-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release8-x86_64-True-False-jammy-ubuntu-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release9-x86_64-True-False-kali-rolling--False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release10-x86_64-True-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release11-aarch64-True-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release12-x86_64-True-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release13-armv7l-False-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release14-aarch64-False-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release15-armv7l-False-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release16-riscv64-False-False---False] PASSED
+tests/test_deploy_unit.py::test_32_bit_userland_and_non_linux_are_refused PASSED
 tests/test_deploy_unit.py::test_raspberry_pi_model_is_recorded PASSED
 tests/test_deploy_unit.py::test_os_release_parsing PASSED
 tests/test_deploy_unit.py::test_detect_os_cli_with_an_os_release_override PASSED
@@ -163,6 +167,11 @@ tests/test_deploy_integration.py::test_hook_is_created_once_and_updated_when_the
 tests/test_deploy_integration.py::test_missing_packages_are_installed PASSED
 tests/test_deploy_integration.py::test_dependency_installation_error_is_reported PASSED
 tests/test_deploy_integration.py::test_present_packages_are_not_reinstalled PASSED
+tests/test_deploy_integration.py::test_without_apt_present_commands_are_enough PASSED
+tests/test_deploy_integration.py::test_without_apt_missing_commands_are_reported PASSED
+tests/test_deploy_integration.py::test_untested_distribution_is_a_warning_not_a_failure PASSED
+tests/test_deploy_integration.py::test_no_tailscale_repository_requires_a_manual_install PASSED
+tests/test_deploy_integration.py::test_non_glibc_without_python_is_explained PASSED
 tests/test_deploy_integration.py::test_uv_with_a_wrong_checksum_is_not_installed PASSED
 tests/test_deploy_integration.py::test_help_of_every_entry_point PASSED
 tests/test_deploy_integration.py::test_missing_config_is_a_clear_error PASSED
@@ -195,7 +204,7 @@ tests/test_webhook_ingress.py::test_deployment_publishes_only_the_webhook_port P
 tests/test_webhook_ingress.py::test_contract_parser_catches_a_funnelled_api PASSED
 tests/test_webhook_ingress.py::test_service_keeps_the_api_on_loopback PASSED
 
-============================= 186 passed in 23.58s =============================
+============================= 195 passed in 23.52s =============================
 
 $ AO_DEPLOY_E2E=1 .venv/bin/pytest -o addopts="" -v -p no:warnings tests/test_deploy_e2e.py
 ============================= test session starts ==============================
@@ -208,10 +217,10 @@ collecting ... collected 1 item
 
 tests/test_deploy_e2e.py::test_bootstrap_end_to_end PASSED
 
-============================== 1 passed in 9.25s ===============================
+============================== 1 passed in 9.75s ===============================
 
 $ .venv/bin/pytest -o addopts="" -q -p no:warnings   # whole suite
 =========================== short test summary info ============================
 SKIPPED [1] tests/test_cross_platform.py:126: node not installed
 SKIPPED [1] tests/test_deploy_e2e.py:206: set AO_DEPLOY_E2E=1 (slow end-to-end)
-331 passed, 2 skipped in 46.08s
+340 passed, 2 skipped in 45.94s

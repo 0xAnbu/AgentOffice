@@ -63,8 +63,8 @@ AgentOffice **nunca** queda expuesto a Internet: solo los dispositivos de tu tai
 
 | Requisito | Detalle |
 |---|---|
-| Sistema | Ubuntu 24.04 o posterior, Debian 12 o 13, o Raspberry Pi OS **64 bits** (basado en Debian 12 o 13). |
-| Arquitectura | 64 bits: `x86_64` (PC) o `aarch64` (Raspberry Pi 3B+/4/5, Zero 2 W con SO de 64 bits). Los sistemas de 32 bits no están soportados. |
+| Sistema | Cualquier Linux de 64 bits con systemd. **Probados:** Ubuntu 24.04 o posterior, Debian 12 o 13 y Raspberry Pi OS **64 bits**. En otras distribuciones el instalador funciona, pero avisa (`WARN`) de que no está probada; si la distribución no usa `apt` o Tailscale no publica repositorio para ella, tendrás que instalar a mano Tailscale ([instrucciones oficiales](https://tailscale.com/kb/1031/install-linux)) y los paquetes básicos (`git`, `curl`, `python3`, `iproute2`). |
+| Arquitectura | 64 bits: `x86_64` (PC) o `aarch64` (Raspberry Pi 3B+/4/5, Zero 2 W con SO de 64 bits). Los sistemas de 32 bits (incluido un sistema de 32 bits sobre un núcleo de 64) no están soportados. |
 | Permisos | Una cuenta que pueda usar `sudo` (administrador). |
 | Internet | Salida a Internet (paquetes, Tailscale, Healthchecks.io). No hace falta abrir puertos en el router. |
 | Disco | Al menos 1 GiB libre en `/opt` y en `/var/lib` (el instalador lo comprueba). |
@@ -454,6 +454,10 @@ Cada error del instalador termina con una línea `HINT:` que indica la solución
 | Reinstalar sobre un sistema existente | — | Es seguro: conserva la base de datos, los tokens, la identidad de Tailscale y el check. Si el puerto configurado no coincide con el instalado, se detiene sin tocar nada. |
 | `secrets file … has permissions 644: readable by other users` | Permisos inseguros. | `sudo chmod 600 /root/agentoffice-secrets.json`. |
 | `run as root (sudo)` | Faltó `sudo`. | Repite con `sudo`. |
+| `Platform: WARN … is not a tested distribution` | Tu distribución no es una de las probadas. | Es solo un aviso: el instalador continúa. |
+| `Tailscale install: FAIL … no official apt repository` | Tailscale no está instalado y no hay repositorio oficial para tu distribución. | Instálalo siguiendo <https://tailscale.com/kb/1031/install-linux> y repite. |
+| `required commands not found: …` | Sistema sin `apt` al que le faltan comandos básicos. | Instálalos con el gestor de paquetes de tu distribución (`dnf`, `zypper`, `pacman`…) y repite. |
+| `… libc: the pinned uv build needs glibc` | Sistema con musl (p. ej. Alpine) sin Python ≥ 3.12. | Instala Python 3.12+ con el gestor de paquetes o indica `python.interpreter`. |
 
 ## K. Mantenimiento
 

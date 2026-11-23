@@ -277,48 +277,53 @@ def osr(**kw: str) -> dict[str, str]:
 
 
 @pytest.mark.parametrize(
-    ("release", "machine", "ok", "codename", "apt", "sys_py"),
+    ("release", "machine", "ok", "tested", "codename", "apt", "sys_py"),
     [
-        (osr(ID="ubuntu", VERSION_ID="24.04", VERSION_CODENAME="noble"), "x86_64", True, "noble", "ubuntu", True),
-        (
-            osr(ID="ubuntu", VERSION_ID="26.04", VERSION_CODENAME="resolute"),
-            "aarch64",
-            True,
-            "resolute",
-            "ubuntu",
-            True,
-        ),
-        (osr(ID="ubuntu", VERSION_ID="22.04", VERSION_CODENAME="jammy"), "x86_64", False, "jammy", "ubuntu", True),
-        (osr(ID="debian", VERSION_ID="12", VERSION_CODENAME="bookworm"), "x86_64", True, "bookworm", "debian", False),
-        (osr(ID="debian", VERSION_ID="13", VERSION_CODENAME="trixie"), "aarch64", True, "trixie", "debian", True),
-        (osr(ID="debian", VERSION_ID="12"), "arm64", True, "bookworm", "debian", False),  # Raspberry Pi OS 64-bit
-        (osr(ID="debian", VERSION_ID="11", VERSION_CODENAME="bullseye"), "x86_64", False, "bullseye", "debian", False),
-        (osr(ID="debian", VERSION_CODENAME="forky"), "x86_64", False, "forky", "debian", False),
-        (
-            osr(ID="raspbian", VERSION_ID="12", VERSION_CODENAME="bookworm"),
-            "armv7l",
-            False,
-            "bookworm",
-            "debian",
-            False,
-        ),
-        (osr(ID="debian", VERSION_ID="12"), "armv7l", False, "", "debian", False),
-        (osr(ID="kali", ID_LIKE="debian", VERSION_ID="2026.4"), "x86_64", False, "", "debian", False),
-        (osr(ID="linuxmint", ID_LIKE="ubuntu debian", VERSION_ID="22"), "x86_64", False, "", "debian", False),
-        (osr(ID="fedora", VERSION_ID="43"), "x86_64", False, "", "debian", False),
-        (osr(), "x86_64", False, "", "debian", False),
+        (osr(ID="ubuntu", VERSION_ID="24.04", VERSION_CODENAME="noble"), "x86_64", True, True, "noble", "ubuntu", True),
+        (osr(ID="ubuntu", VERSION_ID="26.04", VERSION_CODENAME="resolute"), "aarch64", True, True, "resolute", "ubuntu",
+         True),
+        # older Ubuntu: allowed, not tested, Python comes from uv
+        (osr(ID="ubuntu", VERSION_ID="22.04", VERSION_CODENAME="jammy"), "x86_64", True, False, "jammy", "ubuntu", False),
+        (osr(ID="debian", VERSION_ID="12", VERSION_CODENAME="bookworm"), "x86_64", True, True, "bookworm", "debian",
+         False),
+        (osr(ID="debian", VERSION_ID="13", VERSION_CODENAME="trixie"), "aarch64", True, True, "trixie", "debian", True),
+        (osr(ID="debian", VERSION_ID="12"), "arm64", True, True, "bookworm", "debian", False),  # Raspberry Pi OS 64-bit
+        (osr(ID="debian", VERSION_ID="11", VERSION_CODENAME="bullseye"), "x86_64", True, False, "bullseye", "debian",
+         False),
+        (osr(ID="debian", VERSION_CODENAME="forky"), "x86_64", True, False, "forky", "debian", False),
+        # derivatives: allowed; the Tailscale repository of the parent is used when os-release names its codename
+        (osr(ID="linuxmint", ID_LIKE="ubuntu debian", VERSION_ID="22", UBUNTU_CODENAME="jammy"), "x86_64", True, False,
+         "jammy", "ubuntu", False),
+        (osr(ID="kali", ID_LIKE="debian", VERSION_ID="2026.4", VERSION_CODENAME="kali-rolling"), "x86_64", True, False,
+         "kali-rolling", "", False),
+        (osr(ID="fedora", VERSION_ID="43"), "x86_64", True, False, "", "", False),
+        (osr(ID="arch"), "aarch64", True, False, "", "", False),
+        (osr(), "x86_64", True, False, "", "", False),
+        # refused: 32-bit, other architectures
+        (osr(ID="raspbian", VERSION_ID="12", VERSION_CODENAME="bookworm"), "armv7l", False, False, "", "", False),
+        (osr(ID="raspbian", VERSION_ID="12", VERSION_CODENAME="bookworm"), "aarch64", False, False, "", "", False),
+        (osr(ID="debian", VERSION_ID="12"), "armv7l", False, False, "", "", False),
+        (osr(ID="fedora", VERSION_ID="43"), "riscv64", False, False, "", "", False),
     ],
-)
+)  # fmt: skip
 def test_platform_support_matrix(
-    release: dict[str, str], machine: str, ok: bool, codename: str, apt: str, sys_py: bool
+    release: dict[str, str], machine: str, ok: bool, tested: bool, codename: str, apt: str, sys_py: bool
 ) -> None:
     p = P.detect_platform(release, machine)
     assert p.supported is ok, p.reason
     if ok:
+        assert p.tested is tested
         assert p.codename == codename and p.apt_distro == apt and p.system_python_ok is sys_py
         assert p.arch in ("x86_64", "aarch64")
+        assert bool(p.reason) is not tested  # untested distributions carry a warning
     else:
         assert p.reason
+
+
+def test_32_bit_userland_and_non_linux_are_refused() -> None:
+    debian = {"ID": "debian", "VERSION_ID": "12"}
+    assert not P.detect_platform(debian, "aarch64", userland_bits=32).supported
+    assert not P.detect_platform(debian, "x86_64", system="Darwin").supported
 
 
 def test_raspberry_pi_model_is_recorded() -> None:

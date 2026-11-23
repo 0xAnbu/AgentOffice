@@ -490,24 +490,30 @@ def env_set(path: Path, key: str, value: str) -> bool:
 # -- platform detection ---------------------------------------------------------------------------------------------
 
 
+TESTED_DISTROS = "Ubuntu 24.04+, Debian 12/13, Raspberry Pi OS 64-bit"
+
+
 @dataclass
 class Platform:
+    """Any 64-bit Linux (x86_64/aarch64, 64-bit userland) is supported. `tested` marks the distributions the
+    bootstrap is validated on; on the others every stage still runs, with a warning, and the parts that need a
+    distribution-specific source (the Tailscale apt repository) say what to install by hand."""
+
     id: str
     version: str
     codename: str
     arch: str
     pretty: str
     supported: bool
-    reason: str = ""
+    reason: str = ""  # why it is not supported, or (supported but not tested) a warning
     raspberry_pi: bool = False
+    tested: bool = False
+    apt_distro: str = ""  # Tailscale apt repository family ("ubuntu"/"debian"), "" if there is none for this OS
+    libc: str = "glibc"
 
     @property
-    def apt_distro(self) -> str:  # Tailscale repository layout (Raspberry Pi OS 64-bit uses the Debian packages)
-        return "ubuntu" if self.id == "ubuntu" else "debian"
-
-    @property
-    def system_python_ok(self) -> bool:  # distribution python3 is >= 3.12
-        return self.id == "ubuntu" or (self.id == "debian" and self.version != "12")
+    def system_python_ok(self) -> bool:  # distribution python3 is known to be >= 3.12
+        return self.tested and not (self.id == "debian" and self.version == "12")
 
 
 def parse_os_release(text: str) -> dict[str, str]:
@@ -524,52 +530,74 @@ def parse_os_release(text: str) -> dict[str, str]:
     return out
 
 
-def detect_platform(os_release: dict[str, str], machine: str, model: str = "") -> Platform:
+def detect_platform(
+    os_release: dict[str, str],
+    machine: str,
+    model: str = "",
+    *,
+    system: str = "Linux",
+    userland_bits: int = 64,
+    libc: str = "glibc",
+) -> Platform:
     osid = os_release.get("ID", "").lower()
     ver = os_release.get("VERSION_ID", "")
     code = os_release.get("VERSION_CODENAME", "")
-    pretty = os_release.get("PRETTY_NAME", osid or "unknown")
+    pretty = os_release.get("PRETTY_NAME", osid or "unknown Linux")
     arch = {"arm64": "aarch64"}.get(machine, machine)
     pi = "raspberry pi" in model.lower()
-    p = Platform(osid, ver, code, arch, pretty, False, raspberry_pi=pi)
+    p = Platform(osid, ver, code, arch, pretty, False, raspberry_pi=pi, libc=libc)
+    if system != "Linux":
+        p.reason = f"{system} is not supported: AgentOffice servers run on Linux"
+        return p
     if arch not in ("x86_64", "aarch64"):
         p.reason = f"architecture {machine} is not supported (64-bit x86_64 or aarch64 required)"
-    elif osid == "ubuntu":
+        return p
+    if osid == "raspbian" or userland_bits != 64:
+        p.reason = (
+            "32-bit userland on a 64-bit kernel is not supported: install the 64-bit OS (e.g. Raspberry Pi OS 64-bit)"
+        )
+        return p
+    p.supported = True
+    like = os_release.get("ID_LIKE", "").lower().split()
+    if osid == "ubuntu":
         try:
             major, minor = (int(x) for x in ver.split(".")[:2])
         except ValueError:
             major, minor = 0, 0
-        if (major, minor) < (24, 4):
-            p.reason = f"Ubuntu {ver or '?'} is too old: Ubuntu Server 24.04 LTS or later is required"
-        elif not code:
-            p.reason = "Ubuntu without VERSION_CODENAME in /etc/os-release"
-        else:
-            p.supported = True
+        p.apt_distro = "ubuntu" if code else ""
+        p.tested = (major, minor) >= (24, 4) and bool(code)
     elif osid == "debian":
-        if ver == "12":
-            p.codename, p.supported = "bookworm", True
-        elif ver == "13":
-            p.codename, p.supported = "trixie", True
-        else:
-            p.reason = f"Debian {ver or '(testing/unstable)'} is not supported: Debian 12 or 13 is required"
-    elif osid == "raspbian":
-        p.reason = "32-bit Raspberry Pi OS is not supported: install Raspberry Pi OS (64-bit)"
-    else:
-        like = os_release.get("ID_LIKE", "")
+        p.codename = {"12": "bookworm", "13": "trixie"}.get(ver, code)
+        p.apt_distro = "debian" if p.codename else ""
+        p.tested = ver in ("12", "13")
+    elif os_release.get("UBUNTU_CODENAME") and "ubuntu" in like:  # Linux Mint, Pop!_OS, elementary, ...
+        p.codename, p.apt_distro = os_release["UBUNTU_CODENAME"], "ubuntu"
+    elif os_release.get("DEBIAN_CODENAME") and "debian" in like:
+        p.codename, p.apt_distro = os_release["DEBIAN_CODENAME"], "debian"
+    if not p.tested:
         p.reason = (
-            f"{pretty} (ID={osid or '?'}{', ID_LIKE=' + like if like else ''}) is not in the support list "
-            "(Ubuntu 24.04+, Debian 12/13, Raspberry Pi OS 64-bit): sharing a distribution family is not enough"
+            f"{pretty} (ID={osid or '?'}{', ID_LIKE=' + ' '.join(like) if like else ''}) is not a tested distribution "
+            f"({TESTED_DISTROS}): the bootstrap runs, but report problems with the distribution name"
         )
     return p
 
 
 def current_platform() -> Platform:
+    import platform as _platform
+    import struct
+
     osr = Path(os.environ.get("AO_OS_RELEASE", "/etc/os-release"))  # override: tests only
     model = ""
     with contextlib.suppress(OSError):
         model = Path("/proc/device-tree/model").read_text("utf-8", "replace").strip("\x00")
     text = osr.read_text("utf-8") if osr.is_file() else ""
-    return detect_platform(parse_os_release(text), os.uname().machine, model)
+    if not text and not os.environ.get("AO_OS_RELEASE"):
+        alt = Path("/usr/lib/os-release")
+        text = alt.read_text("utf-8") if alt.is_file() else ""
+    libc = "glibc" if _platform.libc_ver()[0] == "glibc" else (_platform.libc_ver()[0] or "other")
+    u = os.uname()
+    return detect_platform(parse_os_release(text), u.machine, model, system=u.sysname,
+                           userland_bits=struct.calcsize("P") * 8, libc=libc)  # fmt: skip
 
 
 # -- subprocess helpers ---------------------------------------------------------------------------------------------
@@ -839,9 +867,29 @@ def mem_total() -> int:
 def precheck(ctx: Ctx) -> list[tuple[str, str, str]]:
     rows: list[tuple[str, str, str]] = []
     p = ctx.platform
-    rows.append(
-        ("Platform", PASS if p.supported else FAIL, f"{p.pretty} {p.arch}" + ("" if p.supported else f": {p.reason}"))
-    )
+    status = FAIL if not p.supported else PASS if p.tested else "WARN"
+    rows.append(("Platform", status, f"{p.pretty} {p.arch}" + (f": {p.reason}" if p.reason else "")))
+    if p.supported and not has_apt():
+        missing = missing_commands()
+        rows.append(
+            (
+                "Packages",
+                FAIL if missing else PASS,
+                f"no apt-get; missing: {', '.join(missing)} (install with the package manager)"
+                if missing
+                else "no apt-get; required commands present",
+            )
+        )
+    if ctx.tailscale and not shutil.which("tailscale") and (not p.apt_distro or not has_apt()):
+        rows.append(
+            (
+                "Tailscale install",
+                FAIL,
+                f"not installed and no official apt repository for this OS: see {TAILSCALE_LINUX_DOC}",
+            )
+        )
+    if find_python(ctx) is None and not p.system_python_ok and p.libc != "glibc":
+        rows.append(("Python", FAIL, f"no Python >= 3.12 and {p.libc} libc (uv needs glibc): install Python 3.12+"))
     if not ctx.paths.user_mode:
         rows.append(
             ("Root", PASS if os.geteuid() == 0 else FAIL, "running as root" if os.geteuid() == 0 else "run with sudo")
@@ -862,9 +910,9 @@ def precheck(ctx: Ctx) -> list[tuple[str, str, str]]:
     rows.append(("Configuration", PASS, f"valid ({cfg_detail}, mode {ctx.cfg['deployment']['mode']})"))
 
     urls: list[tuple[str, str]] = []
-    if ctx.tailscale and not shutil.which("tailscale"):
+    if ctx.tailscale and not shutil.which("tailscale") and p.apt_distro and has_apt():
         urls.append((os.environ.get("AO_TAILSCALE_PKGS_URL", "https://pkgs.tailscale.com"), "Tailscale packages"))
-    if find_python(ctx) is None and not p.system_python_ok:
+    if find_python(ctx) is None and not p.system_python_ok and p.libc == "glibc":
         urls.append((os.environ.get("AO_UV_DOWNLOAD_URL", "https://github.com"), "uv / managed Python download"))
     if ctx.healthchecks:
         urls.append((ctx.cfg["monitoring"]["api_url"], "Healthchecks.io API"))
@@ -945,7 +993,31 @@ def apt_install(ctx: Ctx, pkgs: list[str], *, update: bool = True) -> None:
     )
 
 
+# command that proves each package is there, for systems without apt/dpkg (gnupg is only needed by the Tailscale apt
+# repository, ca-certificates is checked by the TLS connections themselves)
+PACKAGE_COMMANDS = {"git": "git", "curl": "curl", "iproute2": "ip", "python3": "python3"}
+TAILSCALE_LINUX_DOC = "https://tailscale.com/kb/1031/install-linux"
+
+
+def has_apt() -> bool:
+    return bool(shutil.which("apt-get") and shutil.which("dpkg-query"))
+
+
+def missing_commands() -> list[str]:
+    return [cmd for cmd in PACKAGE_COMMANDS.values() if not shutil.which(cmd)]
+
+
 def stage_dependencies(ctx: Ctx) -> None:
+    if not has_apt():
+        missing = missing_commands()
+        if missing:
+            raise DeployError(
+                f"required commands not found: {', '.join(missing)} (no apt-get on this system to install them)",
+                hint="install them with the distribution's package manager (e.g. dnf, zypper, pacman), then re-run",
+            )
+        log("required commands present (no apt-get: packages are managed by the distribution): "
+            + ", ".join(PACKAGE_COMMANDS.values()))  # fmt: skip
+        return
     missing = missing_packages(BASE_PACKAGES)
     if not missing:
         log("system packages present: " + ", ".join(BASE_PACKAGES))
@@ -1094,6 +1166,12 @@ def stage_python(ctx: Ctx) -> None:
         info = probe_python(explicit)
         raise DeployError(
             f"python.interpreter is not usable: {info.describe() if info else explicit + ' does not run'}"
+        )
+    if ctx.platform.libc != "glibc":
+        raise DeployError(
+            f"no Python >= 3.12 found and this system uses {ctx.platform.libc} libc: the pinned uv build needs glibc",
+            hint="install Python 3.12+ with venv and SQLite >= 3.35 from the package manager (or set "
+            "python.interpreter), then re-run",
         )
     if ctx.platform.system_python_ok:
         ctx.change(
@@ -1296,6 +1374,12 @@ def diagnose_up(err: str, tag: str) -> DeployError:
 
 def install_tailscale(ctx: Ctx) -> None:
     plat = ctx.platform
+    if not plat.apt_distro or not has_apt():
+        raise DeployError(
+            f"Tailscale is not installed and {plat.pretty} has no official Tailscale apt repository the bootstrap "
+            "can use",
+            hint=f"install Tailscale from the official instructions ({TAILSCALE_LINUX_DOC}), then re-run",
+        )
     base = check_api_url(
         os.environ.get("AO_TAILSCALE_PKGS_URL", "https://pkgs.tailscale.com/stable"), "Tailscale packages URL"
     )
@@ -2155,7 +2239,7 @@ def verify_live(ctx: Ctx) -> list[Row]:
         Row(
             "Linux",
             PASS if plat.supported else FAIL,
-            f"{plat.pretty} {plat.arch}" + ("" if plat.supported else f" ({plat.reason})"),
+            f"{plat.pretty} {plat.arch}" + (f" ({plat.reason})" if plat.reason else ""),
         )
     )
 
@@ -2618,7 +2702,7 @@ def cmd_monitor(a: argparse.Namespace) -> int:
 
 def cmd_detect(a: argparse.Namespace) -> int:
     p = current_platform()
-    print(json.dumps(p.__dict__ | {"apt_distro": p.apt_distro, "system_python_ok": p.system_python_ok}, indent=2))
+    print(json.dumps(p.__dict__ | {"system_python_ok": p.system_python_ok}, indent=2))
     return 0 if p.supported else 1
 
 

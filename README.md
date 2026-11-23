@@ -55,7 +55,7 @@ Open the office at `http://127.0.0.1:8080/` chat at `http://127.0.0.1:8080/chat`
 
 ## Install a server
 
-`deployment/deploy.sh` installs AgentOffice on one 64-bit Linux server (Ubuntu 24.04+, Debian 12/13, Raspberry Pi OS)
+`deployment/deploy.sh` installs AgentOffice on one 64-bit Linux server (tested on Ubuntu 24.04+, Debian 12/13 and Raspberry Pi OS; other distributions with systemd are allowed with a warning)
 without manual steps. It prepares Python, the service and local backups, joins the server to your Tailscale network
 with private HTTPS, creates the Healthchecks.io monitor and finishes with a verified report. It reads its settings
 from a TOML file and its credentials from a protected file. Running it again only does what is missing. You prepare
