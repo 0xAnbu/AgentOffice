@@ -95,7 +95,11 @@ def test_reinstall_upgrades_an_old_unquoted_install_and_keeps_foreign_hooks(spac
     ad = ADAPTERS["claude-code"]
     assert "Stop" in ad.install("project", str(spaced))["added"]
     cmds = _commands(settings)
-    assert cmds["Stop"] == ["notify-send done", oscmd.shell_command([*SPACED, "hook", "claude-code", "Stop"])]
+    assert cmds["Stop"] == [
+        "notify-send done",
+        oscmd.shell_command([*SPACED, "hook", "claude-code", "Stop"]),
+        oscmd.shell_command([*SPACED, "hook", "claude-code", "Wait"]),  # the rewake waiter, armed after every Stop
+    ]
     assert ad.install("project", str(spaced))["added"] == []  # idempotent once upgraded
     assert ad.doctor("project", str(spaced))["hooks_missing"] == []
     ad.uninstall("project", str(spaced))

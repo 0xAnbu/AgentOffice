@@ -119,11 +119,14 @@ HOOK_EVENTS = (
     "PreCompact",
     "SessionEnd",
 )
+REWAKE_EVENTS = ("SessionStart", "Stop")  # where the background waiter is (re)armed
+REWAKE_TIMEOUT = 24 * 3600  # seconds; hooks.WAIT_MAX gives up a little earlier
 
 
 class ClaudeCode(Adapter):
     runtime = "claude-code"
     binary = "claude"
+    rewake = True  # Claude Code's `asyncRewake` hooks: a background hook that exits 2 wakes an idle session
     capabilities = {
         "observation": "SUPPORTED_AND_TESTED",  # hook events recorded as activity (real run)
         "notification": "SUPPORTED_AND_TESTED",  # supervisor stores; next hook surfaces it (real run)
@@ -137,6 +140,9 @@ class ClaudeCode(Adapter):
     notes = {
         "injection": "Only at safe points: session start, prompt submit, after a tool call, or when the agent tries to stop "
         "(Stop hook blocks once per batch so the agent handles it). A running tool is never interrupted.",
+        "rewake": "An open but idle session is woken by a background `asyncRewake` hook (`agentlink hook claude-code "
+        "Wait`), armed at SessionStart and after every Stop; one waiter per session. Needs a Claude Code version with "
+        "asyncRewake hooks; older versions ignore the field and keep delivering at the next safe point.",
         "resume": "A stopped session is not woken by hooks. Opt-in auto-resume runs `claude --resume <session> -p` with the "
         "message; disabled by default because it spends the participant's quota.",
     }
@@ -153,6 +159,9 @@ class ClaudeCode(Adapter):
             entry: dict[str, Any] = {
                 "hooks": [{"type": "command", "command": f"{cmd} hook {self.runtime} {ev}", "timeout": 15}]
             }
+            if self.rewake and ev in REWAKE_EVENTS:
+                entry["hooks"].append({"type": "command", "command": f"{cmd} hook {self.runtime} Wait",
+                                       "asyncRewake": True, "timeout": REWAKE_TIMEOUT})  # fmt: skip
             if ev == "PostToolUse":
                 entry["matcher"] = "*"
             out[ev] = [entry]
@@ -168,8 +177,8 @@ class ClaudeCode(Adapter):
         added = []
         for ev, entries in self._entries().items():
             cur = hooks.setdefault(ev, [])
-            mine = [h.get("command") for e in cur for h in e.get("hooks", []) if ours(h.get("command", ""))]
-            if mine == [entries[0]["hooks"][0]["command"]]:
+            mine = [h for e in cur for h in e.get("hooks", []) if ours(h.get("command", ""))]
+            if mine == entries[0]["hooks"]:
                 continue  # already installed as is: never duplicate
             # replace only our own entries (an older install may hold an unquoted, broken command);
             # someone else's hooks are never touched
@@ -207,8 +216,14 @@ class ClaudeCode(Adapter):
             data = json.loads(path.read_text("utf-8") or "{}")
             installed = [ev for ev, es in (data.get("hooks") or {}).items()
                          if any(ours(h.get("command", "")) for e in es for h in e.get("hooks", []))]  # fmt: skip
-        return {**super().doctor(), "settings": str(path), "hooks_installed": sorted(installed),
-                "hooks_missing": sorted(set(HOOK_EVENTS) - set(installed))}  # fmt: skip
+        res = {**super().doctor(), "settings": str(path), "hooks_installed": sorted(installed),
+               "hooks_missing": sorted(set(HOOK_EVENTS) - set(installed))}  # fmt: skip
+        if self.rewake:
+            armed = [ev for ev in REWAKE_EVENTS if path.exists() and any(
+                h.get("asyncRewake") and ours(h.get("command", "")) for e in (data.get("hooks") or {}).get(ev, [])
+                for h in e.get("hooks", []))]  # fmt: skip
+            res["rewake_missing"] = sorted(set(REWAKE_EVENTS) - set(armed))
+        return res
 
     def push(self, store: Store, session: dict[str, Any], text: str) -> str | None:
         cfg = store.get("adapter.claude-code", {}) or {}
@@ -229,6 +244,7 @@ class ClaudeCode(Adapter):
 class Codex(ClaudeCode):
     runtime = "codex"
     binary = "codex"
+    rewake = False  # no asyncRewake in codex hooks
     capabilities = {
         "observation": "IMPLEMENTED_NOT_VERIFIED",  # codex hooks need the participant's own hook trust; not exercised
         "notification": "SUPPORTED_AND_TESTED",  # supervisor stores and confirms (real run)
