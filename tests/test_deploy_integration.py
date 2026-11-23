@@ -89,10 +89,10 @@ def test_disconnected_device_is_registered_with_the_key_from_a_file(ts: Any, tmp
     ctx = make_ctx(tmp_path, secrets={"tailscale_auth_key": TS_KEY})
     P.stage_tailscale(ctx)
     st = ts.read()
-    assert st["backend"] == "Running" and st["tags"] == ["tag:agentoffice-server"] and st["key_was_file"]
+    assert st["backend"] == "Running" and st["tags"] == ["tag:agentoffice"] and st["key_was_file"]
     (up,) = ts.calls("up")
     assert all(TS_KEY not in a for a in up), "the auth key must never be in argv"
-    assert "--advertise-tags=tag:agentoffice-server" in up and "--hostname=agentoffice" in up
+    assert "--advertise-tags=tag:agentoffice" in up and "--hostname=agentoffice" in up
     assert not Path(st["key_file"]).exists() and not Path(st["key_file"]).parent.exists(), "temp key file removed"
     assert ctx.ts.dns_name == DNS
     saved = json.loads(ctx.paths.state_file.read_text())
@@ -131,7 +131,7 @@ def test_expected_tailnet_matches_by_name_or_magicdns_suffix(ts: Any, tmp_path: 
     ("setup", "needle"),
     [
         ({"valid_key": "tskey-auth-kOTHER-1"}, "rejected the auth key"),
-        ({"up": "bad_tag"}, "refused the tag tag:agentoffice-server"),
+        ({"up": "bad_tag"}, "refused the tag tag:agentoffice"),
         ({"up": "needs_approval"}, "must be approved"),
         ({"up": "timeout"}, "timed out"),
     ],
@@ -300,7 +300,7 @@ def test_check_is_created_when_none_exists(hc: Any, tmp_path: Path) -> None:
     ctx = hc_ctx(tmp_path, hc)
     P.provision_monitor(ctx)
     (c,) = hc.checks
-    assert c["name"] == "agentoffice-production" and c["timeout"] == 300 and c["grace"] == 600
+    assert c["name"] == "agentoffice" and c["timeout"] == 300 and c["grace"] == 600
     assert set(c["channels"].split(",")) == {ch["id"] for ch in hc.channels}
     body = next(b for m, p, b in hc.requests if m == "POST")
     assert body["unique"] == ["name"]
@@ -328,7 +328,7 @@ def test_outdated_check_is_updated_in_place(hc: Any, tmp_path: Path) -> None:
 
 
 def test_foreign_check_with_the_same_name_is_not_touched(hc: Any, tmp_path: Path) -> None:
-    hc.add_check("agentoffice-production", desc="somebody's check", channels=hc.channels[0]["id"])
+    hc.add_check("agentoffice", desc="somebody's check", channels=hc.channels[0]["id"])
     with pytest.raises(P.DeployError, match="not created by this bootstrap"):
         P.provision_monitor(hc_ctx(tmp_path, hc))
     assert hc.updates() == 0 and hc.creates() == 0
@@ -337,8 +337,8 @@ def test_foreign_check_with_the_same_name_is_not_touched(hc: Any, tmp_path: Path
 
 
 def test_duplicate_checks_are_refused(hc: Any, tmp_path: Path) -> None:
-    hc.add_check("agentoffice-production")
-    hc.add_check("agentoffice-production")
+    hc.add_check("agentoffice")
+    hc.add_check("agentoffice")
     with pytest.raises(P.DeployError, match=r"2 Healthchecks\.io checks are named"):
         P.provision_monitor(hc_ctx(tmp_path, hc))
 

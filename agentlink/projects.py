@@ -11,8 +11,8 @@ from typing import Any
 
 from . import validation as v
 from .db import Database, Executor, Row
-from .directory import agent_by_name, audit
-from .errors import Conflict, Forbidden, NotFound
+from .directory import agent_by_name, audit, purge_channel
+from .errors import BadRequest, Conflict, Forbidden, NotFound
 from .events import emit, scoped_monitor
 from .security import Principal, now_ms
 
@@ -91,6 +91,31 @@ def create_project(db: Database, p: Principal, payload: dict[str, Any]) -> dict[
         audit(tx, p, "project.create", name, f"repo={repo or ''}")
         emit(tx, "project.created", project_id=pid, actor_id=p.agent_id, data={"name": name, "repo": repo})
     return get_project(db, p, name)
+
+
+def delete_project(db: Database, p: Principal, ident: str) -> dict[str, Any]:
+    """Admin-only: remove a project with its channels (messages, tasks, leases, context), sessions, coordinator,
+    events and participants. Agents and their tokens are kept. Cannot be undone."""
+    p.require_admin()
+    with db.transaction() as tx:
+        pr = _row(tx, ident)
+        pid = int(pr["id"])
+        if pr["name"] == "default" and tx.one("SELECT 1 AS x FROM projects WHERE id <> ?", (pid,)) is None:
+            raise BadRequest("the default project is the only one left: create another project first")
+        channels = tx.query("SELECT id FROM channels WHERE project_id = ?", (pid,))
+        messages = sum(purge_channel(tx, int(c["id"])) for c in channels)
+        tx.execute("DELETE FROM leases WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)", (pid,))
+        tx.execute("UPDATE sessions SET parent_id = NULL WHERE parent_id IN (SELECT id FROM sessions WHERE project_id = ?)",
+                   (pid,))  # fmt: skip
+        for table in ("deliveries", "checkpoints"):
+            tx.execute(
+                f"DELETE FROM {table} WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)", (pid,)
+            )
+        for table in ("sessions", "coordinators", "events", "project_members"):
+            tx.execute(f"DELETE FROM {table} WHERE project_id = ?", (pid,))
+        tx.execute("DELETE FROM projects WHERE id = ?", (pid,))
+        audit(tx, p, "project.delete", pr["name"], f"channels={len(channels)} messages={messages}")
+    return {"deleted": pr["name"], "channels": len(channels), "messages": messages}
 
 
 def set_project_member(db: Database, p: Principal, ident: str, payload: dict[str, Any], add: bool) -> dict[str, Any]:

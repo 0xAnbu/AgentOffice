@@ -463,6 +463,7 @@ async function arrancar() {
   try {
     st.me = await pedir('/api/me');
     $('whoami').textContent = `${st.me.agent} (${st.me.role})`;
+    $('nav-admin').hidden = st.me.role !== 'admin';
     const proyectos = await pedir('/api/board/projects');
     if (!proyectos.length) {
       mostrarDenegado('Esta página es para administradores: tu token no administra ningún proyecto (hace falta rol admin global o admin del proyecto). Puedes seguir el trabajo en el chat.');
