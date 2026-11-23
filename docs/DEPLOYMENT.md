@@ -34,7 +34,8 @@ sudo deployment/install.sh --wizard                                # interactive
   the webhook secret, if enabled) is stored, in the `640` env file.
 - **Stages** (state in `/etc/agent-office/bootstrap-state.json`): `dependencies` (apt) → `python` (system ≥ 3.12,
   else uv-managed CPython, e.g. on Debian 12) → `install` (`install.sh`, skipped if already installed and healthy) →
-  `tailscale` (official apt repository; `tailscale up` with the tag, only if not already connected; refuses a
+  `tailscale` (if missing: in a terminal you are asked to install it with `curl -fsSL https://tailscale.com/install.sh | sh`; `--install-tailscale` runs it
+  without asking; unattended runs use the official apt repository with the key pinned; `tailscale up` with the tag, only if not already connected; refuses a
   different tailnet) → `https` (Serve on `https_port` → `127.0.0.1:<port>`; never overwrites another mapping;
   refuses Funnel on that port) → `github_webhook` (optional, see below) → `monitoring` (Healthchecks.io Management
   API v3: create, reuse or update the check `check_name`; refuses projects with no integrations and checks it did
@@ -47,9 +48,10 @@ sudo deployment/install.sh --wizard                                # interactive
   error).
 - **Supported:** any Linux on `x86_64`/`aarch64` with a 64-bit userland and systemd. **Tested** (preflight `PASS`):
   Ubuntu ≥ 24.04, Debian 12/13, Raspberry Pi OS 64-bit. Other distributions get a `WARN` and the same stages:
-  packages via `apt-get` when present, otherwise the required commands must already be installed. Tailscale comes from
-  its apt repository for Debian/Ubuntu and derivatives that declare `UBUNTU_CODENAME`/`DEBIAN_CODENAME`, otherwise it
-  must be installed by hand first (preflight `FAIL` with the link). Python comes from uv on glibc systems without a
+  packages via `apt-get` when present, otherwise the required commands must already be installed. A missing
+  Tailscale is installed with the official script (asked in a terminal, or `--install-tailscale`); unattended
+  (`--non-interactive`) it comes from its apt repository for Debian/Ubuntu and derivatives that declare
+  `UBUNTU_CODENAME`/`DEBIAN_CODENAME`, otherwise the preflight fails naming both options. Python comes from uv on glibc systems without a
   Python ≥ 3.12. Refused: 32-bit, other architectures, a 32-bit userland on a 64-bit kernel,
   non-Linux systems.
 - **Not covered by the verification:** reachability from other devices (see

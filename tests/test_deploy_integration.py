@@ -7,6 +7,7 @@ behave like the fakes: that is the NOT_VERIFIED part of docs/evidence/automated-
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -71,6 +72,7 @@ def ts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 
 def test_tailscale_not_installed_is_planned_in_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    monkeypatch.setattr(P, "has_apt", lambda: True)
     ctx = make_ctx(tmp_path, dry_run=True)
     P.stage_tailscale(ctx)
     assert any("install Tailscale from the official apt repository" in s for s in ctx.plan)
@@ -488,6 +490,121 @@ def test_non_glibc_without_python_is_explained(tmp_path: Path, monkeypatch: pyte
     ctx = untested_ctx(tmp_path, {"ID": "alpine", "VERSION_ID": "3.22"}, libc="other")
     with pytest.raises(P.DeployError, match="uv build needs glibc"):
         P.stage_python(ctx)
+
+
+# -- missing Tailscale: ask, then run the official install script ---------------------------------------------------
+
+
+def no_tailscale(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_which = shutil.which
+    monkeypatch.setattr(P.shutil, "which", lambda c, *a, **k: None if c == "tailscale" else real_which(c, *a, **k))
+
+
+def in_terminal(monkeypatch: pytest.MonkeyPatch, *answers: str) -> list[str]:
+    """Pretend stdin is a terminal and feed the answers; returns the prompts shown."""
+    shown: list[str] = []
+    queue = list(answers)
+    monkeypatch.setattr(P.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": shown.append(prompt) or queue.pop(0))
+    return shown
+
+
+def test_missing_tailscale_asks_and_runs_the_official_script(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    no_tailscale(monkeypatch)
+    ran: list[str] = []
+    monkeypatch.setattr(P, "install_tailscale_script", lambda ctx: ran.append("script") or (_ for _ in ()).throw(
+        P.DeployError("stop after the install")))  # fmt: skip
+    shown = in_terminal(monkeypatch, "y")
+    ctx = make_ctx(tmp_path)
+    ctx.interactive = True
+    with pytest.raises(P.DeployError, match="stop after the install"):
+        P.stage_tailscale(ctx)
+    assert ran == ["script"] and P.TAILSCALE_INSTALL_CMD in shown[0]
+
+
+def test_declining_the_tailscale_install_fails_with_the_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    no_tailscale(monkeypatch)
+    monkeypatch.setattr(P, "install_tailscale_script", lambda ctx: pytest.fail("must not install"))
+    in_terminal(monkeypatch, "n")
+    ctx = make_ctx(tmp_path)
+    ctx.interactive = True
+    with pytest.raises(P.DeployError, match="Tailscale is required") as e:
+        P.stage_tailscale(ctx)
+    assert P.TAILSCALE_INSTALL_CMD in e.value.hint
+
+
+def test_precheck_reports_how_tailscale_will_be_installed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    no_tailscale(monkeypatch)
+    monkeypatch.setattr(P, "reach", lambda host, port=443, timeout=5: None)
+    ctx = untested_ctx(tmp_path, {"ID": "fedora", "VERSION_ID": "43"})
+    assert {r[0]: r for r in P.precheck(ctx)}["Tailscale install"][1] == P.FAIL  # unattended, no repository
+    ctx.tailscale_script = True
+    rows = {r[0]: r for r in P.precheck(ctx)}
+    assert rows["Tailscale install"][1] == P.PASS and P.TAILSCALE_INSTALL_CMD in rows["Tailscale install"][2]
+    assert rows["Network: Tailscale install script"][2] == "tailscale.com: reachable"
+    ctx.tailscale_script, ctx.interactive = False, True
+    monkeypatch.setattr(P.sys.stdin, "isatty", lambda: True)
+    assert {r[0]: r for r in P.precheck(ctx)}["Tailscale install"][1] == "WARN"
+    with pytest.raises(P.DeployError, match="no official Tailscale apt repository"):
+        ctx.interactive = False
+        P.stage_tailscale(ctx)
+
+
+class ScriptServer(BaseHTTPRequestHandler):
+    body = b""
+
+    def do_GET(self) -> None:
+        if self.path != "/install.sh":
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(self.body)))
+        self.end_headers()
+        self.wfile.write(self.body)
+
+    def log_message(self, *a: Any) -> None:
+        pass
+
+
+@pytest.fixture
+def script_server() -> Any:
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), ScriptServer)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+def test_install_script_is_piped_to_sh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script_server: str) -> None:
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    ScriptServer.body = (
+        f"printf '#!/bin/sh\\necho fake\\n' > {bindir}/tailscale && chmod +x {bindir}/tailscale\n".encode()
+    )
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+    monkeypatch.setenv("AO_TAILSCALE_INSTALL_URL", f"{script_server}/install.sh")
+    P.install_tailscale_script(make_ctx(tmp_path))
+    assert (bindir / "tailscale").is_file()
+
+
+def test_failed_script_download_installs_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script_server: str
+) -> None:
+    monkeypatch.setenv("AO_TAILSCALE_INSTALL_URL", f"{script_server}/missing.sh")
+    with pytest.raises(P.DeployError, match="Tailscale install script failed"):
+        P.install_tailscale_script(make_ctx(tmp_path))
+
+
+def test_wizard_stops_when_production_tailscale_install_is_declined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    no_tailscale(monkeypatch)
+    monkeypatch.setenv("AO_ETC", str(tmp_path / "etc"))
+    in_terminal(monkeypatch, "1", "", "", "n")  # production, default hostname and port, do not install Tailscale
+    out = tmp_path / "deployment.toml"
+    assert P.cmd_wizard(argparse.Namespace(config=str(out))) == 1
+    assert not out.exists() and "Nothing written" in capsys.readouterr().out
 
 
 # -- uv download integrity -------------------------------------------------------------------------------------------

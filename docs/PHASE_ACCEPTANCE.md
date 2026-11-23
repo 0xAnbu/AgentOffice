@@ -288,7 +288,7 @@ verification:
     - "pytest (whole suite)"
     - "AO_DEPLOY_E2E=1 pytest tests/test_deploy_e2e.py"
     - "bash deployment/verify.sh"
-  passed: 340
+  passed: 346
   failed: 0
   skipped: 2
   evidence:

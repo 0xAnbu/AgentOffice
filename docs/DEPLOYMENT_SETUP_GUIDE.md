@@ -63,7 +63,8 @@ AgentOffice **nunca** queda expuesto a Internet: solo los dispositivos de tu tai
 
 | Requisito | Detalle |
 |---|---|
-| Sistema | Cualquier Linux de 64 bits con systemd. **Probados:** Ubuntu 24.04 o posterior, Debian 12 o 13 y Raspberry Pi OS **64 bits**. En otras distribuciones el instalador funciona, pero avisa (`WARN`) de que no está probada; si la distribución no usa `apt` o Tailscale no publica repositorio para ella, tendrás que instalar a mano Tailscale ([instrucciones oficiales](https://tailscale.com/kb/1031/install-linux)) y los paquetes básicos (`git`, `curl`, `python3`, `iproute2`). |
+| Sistema | Cualquier Linux de 64 bits con systemd. **Probados:** Ubuntu 24.04 o posterior, Debian 12 o 13 y Raspberry Pi OS **64 bits**. En otras distribuciones el instalador funciona, pero avisa (`WARN`) de que no está probada; si la distribución no usa `apt`, tendrás que instalar a mano los paquetes básicos (`git`, `curl`, `python3`, `iproute2`). |
+| Tailscale | No hace falta instalarlo antes. Si falta, el instalador (y el asistente) te pregunta si debe instalarlo con el script oficial `curl -fsSL https://tailscale.com/install.sh | sh`; sin Tailscale la producción no funciona. Para no tener que responder, añade `--install-tailscale`. |
 | Arquitectura | 64 bits: `x86_64` (PC) o `aarch64` (Raspberry Pi 3B+/4/5, Zero 2 W con SO de 64 bits). Los sistemas de 32 bits (incluido un sistema de 32 bits sobre un núcleo de 64) no están soportados. |
 | Permisos | Una cuenta que pueda usar `sudo` (administrador). |
 | Internet | Salida a Internet (paquetes, Tailscale, Healthchecks.io). No hace falta abrir puertos en el router. |
@@ -350,6 +351,8 @@ sudo deployment/deploy.sh --dry-run --config /etc/agent-office/deployment.toml -
 sudo deployment/deploy.sh --config /etc/agent-office/deployment.toml --secrets-file /root/agentoffice-secrets.json
 ```
 
+Si Tailscale no está instalado, el instalador pregunta antes de instalarlo con
+`curl -fsSL https://tailscale.com/install.sh | sh`; responde `y` (sin Tailscale la producción falla).
 Tarda unos minutos (la primera vez descarga paquetes y dependencias). Cada paso aparece en pantalla con
 `== <fase>` y las acciones realizadas con `DO`. Si algo falla, se detiene en esa fase con `ERROR:` y una línea `HINT:`
 que dice cómo resolverlo. Al volver a ejecutar el mismo comando, **continúa** desde donde quedó.
@@ -455,7 +458,9 @@ Cada error del instalador termina con una línea `HINT:` que indica la solución
 | `secrets file … has permissions 644: readable by other users` | Permisos inseguros. | `sudo chmod 600 /root/agentoffice-secrets.json`. |
 | `run as root (sudo)` | Faltó `sudo`. | Repite con `sudo`. |
 | `Platform: WARN … is not a tested distribution` | Tu distribución no es una de las probadas. | Es solo un aviso: el instalador continúa. |
-| `Tailscale install: FAIL … no official apt repository` | Tailscale no está instalado y no hay repositorio oficial para tu distribución. | Instálalo siguiendo <https://tailscale.com/kb/1031/install-linux> y repite. |
+| `Tailscale install: FAIL … no official apt repository` | Tailscale no está instalado, la ejecución es desatendida (`--non-interactive`) y no hay repositorio oficial para tu distribución. | Repite desde una terminal (se te preguntará), añade `--install-tailscale`, o instálalo con `curl -fsSL https://tailscale.com/install.sh | sh`. |
+| `Tailscale is required … and was not installed` | Respondiste «n» a instalar Tailscale. | Repite y responde «y», o instálalo antes con `curl -fsSL https://tailscale.com/install.sh | sh`. |
+| `the Tailscale install script failed` | No se pudo descargar o ejecutar el script oficial. | Comprueba la conexión a `tailscale.com` (fila `Network: Tailscale install script` del preflight) y repite. |
 | `required commands not found: …` | Sistema sin `apt` al que le faltan comandos básicos. | Instálalos con el gestor de paquetes de tu distribución (`dnf`, `zypper`, `pacman`…) y repite. |
 | `… libc: the pinned uv build needs glibc` | Sistema con musl (p. ej. Alpine) sin Python ≥ 3.12. | Instala Python 3.12+ con el gestor de paquetes o indica `python.interpreter`. |
 

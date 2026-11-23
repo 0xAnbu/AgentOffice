@@ -45,7 +45,7 @@ Run `make install` with Python 3.12 or later first.
   1. *Unit* (`tests/test_deploy_unit.py`, 119): config schema and every rejected value, secrets file permissions and
      placeholders, platform matrix (tested vs allowed distributions, derivatives, 32-bit and other architectures refused), Python selection, Tailscale and
      Serve state classification, Healthchecks payloads, report verdicts, redaction.
-  2. *Simulated services* (`tests/test_deploy_integration.py`, 54): fake `tailscale` (bad/expired/used key, tag
+  2. *Simulated services* (`tests/test_deploy_integration.py`, 60): missing Tailscale asked/declined/`--install-tailscale` and the install script piped to `sh` from a local server, fake `tailscale` (bad/expired/used key, tag
      refused, pending approval, stopped, wrong tailnet, MagicDNS/HTTPS disabled, Serve conflict, API on Funnel), real
      TLS through a local proxy with a test CA (verification never disabled), fake Healthchecks.io v3
      (create/reuse/update, foreign and duplicate checks, no integrations, 401/403 not retried, 429/5xx retried), fake

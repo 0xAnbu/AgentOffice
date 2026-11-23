@@ -1,4 +1,4 @@
-# 2026-11-23T12:48:31Z base commit de0f554 + platform precheck change (working tree); Linux x86_64; Python 3.14.8; systemd 262
+# 2026-11-23T13:05:30Z base commit e0da365 + Tailscale install prompt (working tree); Linux x86_64; Python 3.14.8; systemd 262
 $ .venv/bin/pytest -o addopts="" -v -p no:warnings tests/test_deploy_unit.py tests/test_deploy_integration.py tests/test_webhook_ingress.py
 ============================= test session starts ==============================
 platform linux -- Python 3.14.8, pytest-9.2.0, pluggy-1.7.0 -- /home/kali/Claude/AgentOffice/work/agentics/.venv/bin/python3
@@ -6,7 +6,7 @@ cachedir: .pytest_cache
 rootdir: /home/kali/Claude/AgentOffice/work/AgentOffice
 configfile: pyproject.toml
 plugins: anyio-4.16.0
-collecting ... collected 195 items
+collecting ... collected 201 items
 
 tests/test_deploy_unit.py::test_example_config_is_valid_and_matches_the_defaults PASSED
 tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[deploymnet]\nmode='production'-unknown section [deploymnet]] PASSED
@@ -172,6 +172,12 @@ tests/test_deploy_integration.py::test_without_apt_missing_commands_are_reported
 tests/test_deploy_integration.py::test_untested_distribution_is_a_warning_not_a_failure PASSED
 tests/test_deploy_integration.py::test_no_tailscale_repository_requires_a_manual_install PASSED
 tests/test_deploy_integration.py::test_non_glibc_without_python_is_explained PASSED
+tests/test_deploy_integration.py::test_missing_tailscale_asks_and_runs_the_official_script PASSED
+tests/test_deploy_integration.py::test_declining_the_tailscale_install_fails_with_the_command PASSED
+tests/test_deploy_integration.py::test_precheck_reports_how_tailscale_will_be_installed PASSED
+tests/test_deploy_integration.py::test_install_script_is_piped_to_sh PASSED
+tests/test_deploy_integration.py::test_failed_script_download_installs_nothing PASSED
+tests/test_deploy_integration.py::test_wizard_stops_when_production_tailscale_install_is_declined PASSED
 tests/test_deploy_integration.py::test_uv_with_a_wrong_checksum_is_not_installed PASSED
 tests/test_deploy_integration.py::test_help_of_every_entry_point PASSED
 tests/test_deploy_integration.py::test_missing_config_is_a_clear_error PASSED
@@ -204,7 +210,7 @@ tests/test_webhook_ingress.py::test_deployment_publishes_only_the_webhook_port P
 tests/test_webhook_ingress.py::test_contract_parser_catches_a_funnelled_api PASSED
 tests/test_webhook_ingress.py::test_service_keeps_the_api_on_loopback PASSED
 
-============================= 195 passed in 23.52s =============================
+============================= 201 passed in 25.30s =============================
 
 $ AO_DEPLOY_E2E=1 .venv/bin/pytest -o addopts="" -v -p no:warnings tests/test_deploy_e2e.py
 ============================= test session starts ==============================
@@ -217,10 +223,10 @@ collecting ... collected 1 item
 
 tests/test_deploy_e2e.py::test_bootstrap_end_to_end PASSED
 
-============================== 1 passed in 9.75s ===============================
+============================== 1 passed in 10.04s ==============================
 
 $ .venv/bin/pytest -o addopts="" -q -p no:warnings   # whole suite
 =========================== short test summary info ============================
 SKIPPED [1] tests/test_cross_platform.py:126: node not installed
 SKIPPED [1] tests/test_deploy_e2e.py:206: set AO_DEPLOY_E2E=1 (slow end-to-end)
-340 passed, 2 skipped in 45.94s
+1 failed, 345 passed, 2 skipped in 46.99s

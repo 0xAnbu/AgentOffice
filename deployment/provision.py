@@ -782,6 +782,7 @@ class Ctx:
     state: State
     dry_run: bool = False
     interactive: bool = False
+    tailscale_script: bool = False  # --install-tailscale: run the official install script without asking
     python: str | None = None
     plan: list[str] = field(default_factory=list)
     ts: TailscaleState | None = None
@@ -825,6 +826,10 @@ class Ctx:
                 self.secrets[key] = v
                 return v
         return None
+
+    @property
+    def can_prompt(self) -> bool:
+        return self.interactive and sys.stdin.isatty()
 
     def admin_token(self) -> str:
         t = env_get(self.paths.env_file, "AGENTLINK_ADMIN_TOKEN")
@@ -880,13 +885,24 @@ def precheck(ctx: Ctx) -> list[tuple[str, str, str]]:
                 else "no apt-get; required commands present",
             )
         )
-    if ctx.tailscale and not shutil.which("tailscale") and (not p.apt_distro or not has_apt()):
+    ts_method = tailscale_install_method(ctx) if ctx.tailscale and not shutil.which("tailscale") else None
+    if ts_method is not None:
         rows.append(
-            (
-                "Tailscale install",
-                FAIL,
-                f"not installed and no official apt repository for this OS: see {TAILSCALE_LINUX_DOC}",
-            )
+            {
+                "script": ("Tailscale install", PASS, f"not installed: will run `{TAILSCALE_INSTALL_CMD}`"),
+                "ask": (
+                    "Tailscale install",
+                    "WARN",
+                    f"not installed: you will be asked to run `{TAILSCALE_INSTALL_CMD}`",
+                ),
+                "apt": ("Tailscale install", PASS, "not installed: will be installed from the official apt repository"),
+                "": (
+                    "Tailscale install",
+                    FAIL,
+                    "not installed and no official apt repository for this OS: re-run in a terminal to be asked, "
+                    f"add --install-tailscale to run `{TAILSCALE_INSTALL_CMD}`, or see {TAILSCALE_LINUX_DOC}",
+                ),
+            }[ts_method]
         )
     if find_python(ctx) is None and not p.system_python_ok and p.libc != "glibc":
         rows.append(("Python", FAIL, f"no Python >= 3.12 and {p.libc} libc (uv needs glibc): install Python 3.12+"))
@@ -910,7 +926,9 @@ def precheck(ctx: Ctx) -> list[tuple[str, str, str]]:
     rows.append(("Configuration", PASS, f"valid ({cfg_detail}, mode {ctx.cfg['deployment']['mode']})"))
 
     urls: list[tuple[str, str]] = []
-    if ctx.tailscale and not shutil.which("tailscale") and p.apt_distro and has_apt():
+    if ts_method in ("script", "ask"):
+        urls.append((os.environ.get("AO_TAILSCALE_INSTALL_URL", TAILSCALE_INSTALL_URL), "Tailscale install script"))
+    if ts_method == "apt":
         urls.append((os.environ.get("AO_TAILSCALE_PKGS_URL", "https://pkgs.tailscale.com"), "Tailscale packages"))
     if find_python(ctx) is None and not p.system_python_ok and p.libc == "glibc":
         urls.append((os.environ.get("AO_UV_DOWNLOAD_URL", "https://github.com"), "uv / managed Python download"))
@@ -997,6 +1015,8 @@ def apt_install(ctx: Ctx, pkgs: list[str], *, update: bool = True) -> None:
 # repository, ca-certificates is checked by the TLS connections themselves)
 PACKAGE_COMMANDS = {"git": "git", "curl": "curl", "iproute2": "ip", "python3": "python3"}
 TAILSCALE_LINUX_DOC = "https://tailscale.com/kb/1031/install-linux"
+TAILSCALE_INSTALL_URL = "https://tailscale.com/install.sh"
+TAILSCALE_INSTALL_CMD = f"curl -fsSL {TAILSCALE_INSTALL_URL} | sh"
 
 
 def has_apt() -> bool:
@@ -1372,6 +1392,31 @@ def diagnose_up(err: str, tag: str) -> DeployError:
     return DeployError(f"tailscale up failed: {tail(err, 4)}")
 
 
+def tailscale_install_method(ctx: Ctx) -> str:
+    """How a missing Tailscale gets installed: "script" (--install-tailscale), "ask" (a terminal: the operator
+    confirms the official script), "apt" (unattended, pinned apt repository) or "" (no way: fail)."""
+    if ctx.tailscale_script:
+        return "script"
+    if ctx.can_prompt:
+        return "ask"
+    if ctx.platform.apt_distro and has_apt():
+        return "apt"
+    return ""
+
+
+def install_tailscale_script(ctx: Ctx) -> None:
+    """Run the official installer exactly as documented: curl -fsSL https://tailscale.com/install.sh | sh."""
+    url = check_api_url(os.environ.get("AO_TAILSCALE_INSTALL_URL", TAILSCALE_INSTALL_URL), "Tailscale install URL")
+    # pipefail: a failed download must not run as an empty (successful) script; the URL is an argument, not code
+    must(["bash", "-c", 'set -o pipefail; curl -fsSL "$1" | sh', "tailscale-install", url],
+         "the Tailscale install script", timeout=900)  # fmt: skip
+    if not shutil.which("tailscale"):
+        raise DeployError(
+            "the Tailscale install script finished but the tailscale command is not on PATH",
+            hint=f"install it by hand ({TAILSCALE_LINUX_DOC}) and re-run",
+        )
+
+
 def install_tailscale(ctx: Ctx) -> None:
     plat = ctx.platform
     if not plat.apt_distro or not has_apt():
@@ -1440,11 +1485,34 @@ def stage_tailscale(ctx: Ctx) -> None:
         return
     n = ctx.cfg["network"]
     if not shutil.which("tailscale"):
-        ctx.change(
-            f"install Tailscale from the official apt repository ({ctx.platform.apt_distro} {ctx.platform.codename}, "
-            "signing key fingerprint pinned)",
-            lambda: install_tailscale(ctx),
-        )
+        method = tailscale_install_method(ctx)
+        if method == "ask" and not ctx.dry_run:
+            if not yes(f"Tailscale is not installed and this deployment needs it. Install it now with "
+                       f"`{TAILSCALE_INSTALL_CMD}`?", True):  # fmt: skip
+                raise DeployError(
+                    "Tailscale is required (network.provider = 'tailscale') and was not installed",
+                    hint=f"install it (`{TAILSCALE_INSTALL_CMD}`) and re-run, or use network.provider = 'none' "
+                    "(development only)",
+                )
+            method = "script"
+        if method in ("script", "ask"):
+            ctx.change(
+                f"install Tailscale with the official script (`{TAILSCALE_INSTALL_CMD}`)"
+                + (", after confirmation" if method == "ask" else ""),
+                lambda: install_tailscale_script(ctx),
+            )
+        elif method == "apt":
+            ctx.change(
+                f"install Tailscale from the official apt repository ({ctx.platform.apt_distro} "
+                f"{ctx.platform.codename}, signing key fingerprint pinned)",
+                lambda: install_tailscale(ctx),
+            )
+        else:
+            raise DeployError(
+                f"Tailscale is not installed and {ctx.platform.pretty} has no official Tailscale apt repository",
+                hint=f"re-run in a terminal to be asked, add --install-tailscale to run `{TAILSCALE_INSTALL_CMD}`, "
+                f"or install it by hand ({TAILSCALE_LINUX_DOC})",
+            )
         if ctx.dry_run:
             ctx.plan.append(
                 f"register this device with the auth key (tag {n['tag']}, hostname {ctx.cfg['deployment']['hostname']})"
@@ -2617,7 +2685,15 @@ def make_ctx(a: argparse.Namespace, *, config_required: bool, dry_run: bool = Fa
     secrets = load_secrets(a.secrets_file)
     state = State(paths.state_file, enabled=not dry_run and paths.etc.is_dir())
     return Ctx(
-        cfg, cfg_path, secrets, paths, current_platform(), state, dry_run=dry_run, interactive=not a.non_interactive
+        cfg,
+        cfg_path,
+        secrets,
+        paths,
+        current_platform(),
+        state,
+        dry_run=dry_run,
+        interactive=not a.non_interactive,
+        tailscale_script=bool(getattr(a, "install_tailscale", False)),
     )
 
 
@@ -2782,8 +2858,17 @@ def cmd_wizard(a: argparse.Namespace) -> int:
     ans["network"] = "tailscale" if prod else "none"
     ans["monitoring"] = "healthchecks" if prod else "none"
     ans["webhook"] = False
+    deploy_flags: list[str] = []
     if prod:
         print("\n-- Tailscale (docs/DEPLOYMENT_SETUP_GUIDE.md §C)")
+        if not shutil.which("tailscale"):
+            if not yes(f"Tailscale is not installed and production needs it. Install it during the deployment with "
+                       f"`{TAILSCALE_INSTALL_CMD}`?", True):  # fmt: skip
+                print(
+                    "Production cannot work without Tailscale: install it, or choose 2) Development. Nothing written."
+                )
+                return 1
+            deploy_flags.append("--install-tailscale")
         ans["tag"] = ask(
             "Device tag", "tag:agentoffice-server", lambda v: bool(TAG_RE.match(v)), "like tag:agentoffice-server"
         )
@@ -2847,7 +2932,16 @@ def cmd_wizard(a: argparse.Namespace) -> int:
         return 0
     with secret_file(json.dumps(sec)) as sf:
         r = subprocess.run(
-            ["bash", str(HERE / "deploy.sh"), "--config", str(out), "--secrets-file", str(sf), "--non-interactive"],
+            [
+                "bash",
+                str(HERE / "deploy.sh"),
+                "--config",
+                str(out),
+                "--secrets-file",
+                str(sf),
+                "--non-interactive",
+                *deploy_flags,
+            ],
             check=False,
         )
     print("\nThe temporary secrets file was removed. Re-running deploy.sh later needs no secrets unless something "
@@ -2890,6 +2984,11 @@ def parser() -> argparse.ArgumentParser:
         "Each value may instead come from AO_TAILSCALE_AUTH_KEY / AO_HEALTHCHECKS_API_KEY / AO_GITHUB_WEBHOOK_SECRET / AO_GITHUB_TOKEN",
     )
     common.add_argument("--non-interactive", action="store_true", help="never prompt; fail naming what is missing")
+    common.add_argument(
+        "--install-tailscale",
+        action="store_true",
+        help=f"if Tailscale is missing, install it with `{TAILSCALE_INSTALL_CMD}` without asking",
+    )
     ap = _Parser(prog="provision.py", description="AgentOffice deployment automation")
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser(
