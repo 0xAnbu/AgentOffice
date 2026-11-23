@@ -8,20 +8,28 @@ Safe points used for delivery:
     UserPromptSubmit   pending messages, before the model sees the user's prompt
     PostToolUse        only urgent (P1) messages that are new, after a tool finished (never mid-tool)
     Stop               if new messages are pending, block the stop once so the agent handles them
+    Wait               (Claude Code, `asyncRewake`) background waiter armed at SessionStart and after every Stop:
+                       when a message arrives while the session is idle it exits 2 and Claude Code wakes the model
 Lifecycle: SessionStart/SessionEnd and SubagentStart/SubagentStop register and end server sessions.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
+import uuid
+from collections.abc import Callable
 from typing import Any
 
 from .local import Api, ApiError, Store, api_from_config, load_config
 
 MAX_INJECT = 8
 BODY_CHARS = 700
+WAIT_POLL = 1.0  # seconds between looks at the local store (the supervisor fills it; no network here)
+WAIT_STALE = 15.0  # a waiter that has not renewed its hold for this long is gone; another one may take over
+WAIT_MAX = 23 * 3600  # give up quietly before the hook timeout (24 h) kills us; the next Stop arms a new waiter
 
 
 def render(msgs: list[dict[str, Any]], project: str | None, session_id: str | None, headless: bool = False) -> str:
@@ -99,10 +107,19 @@ def _ensure_session(
     return store.session(local_id)
 
 
-def _inject(store: Store, api: Api | None, s: dict[str, Any] | None, msgs: list[dict[str, Any]], via: str) -> None:
+def _inject(
+    store: Store, api: Api | None, s: dict[str, Any] | None, msgs: list[dict[str, Any]], via: str
+) -> list[dict[str, Any]]:
+    """Mark what render() will show as injected. Returns the messages this call won: another hook process may have
+    injected some of them meanwhile, and those must not reach the model twice."""
     # Only what render() actually showed the model counts as injected; the rest stays pending for the next safe point.
     ids = [int(m["message_id"]) for m in msgs[:MAX_INJECT]]
-    store.mark(ids, "injected_to_runtime", session=(s or {}).get("server_id"), via=via)
+    won = set(store.mark(ids, "injected_to_runtime", session=(s or {}).get("server_id"), via=via))
+    _report(store, api, s, [i for i in ids if i in won], via)
+    return [m for m in msgs[:MAX_INJECT] if int(m["message_id"]) in won]
+
+
+def _report(store: Store, api: Api | None, s: dict[str, Any] | None, ids: list[int], via: str) -> None:
     if api is not None and ids:
         try:  # best effort; the supervisor retries anything unreported
             api.call("POST", "/api/deliveries", {"message_ids": ids, "state": "injected_to_runtime",
@@ -144,29 +161,28 @@ def handle(
     if event == "UserPromptSubmit":
         if local_id:
             store.activity(local_id, "prompt", "", progress=True)
-        msgs = store.pending(only_new=True)
+        msgs = _inject(store, api, s, store.pending(only_new=True), f"{runtime}:UserPromptSubmit")
         if not msgs:
             return None
-        _inject(store, api, s, msgs, f"{runtime}:UserPromptSubmit")
         return _ctx("UserPromptSubmit", render(msgs, project, sid))
 
     if event == "PostToolUse":
         if local_id:
             store.activity(local_id, "tool", str(payload.get("tool_name") or ""), progress=True)
-        urgent = store.pending(max_priority=1, only_new=True)
+        urgent = _inject(store, api, s, store.pending(max_priority=1, only_new=True), f"{runtime}:PostToolUse")
         if not urgent:
             return None
-        _inject(store, api, s, urgent, f"{runtime}:PostToolUse")
         return _ctx("PostToolUse", render(urgent, project, sid))
 
     if event == "Stop":
         if local_id:
             store.activity(local_id, "stop", "", progress=False)
             store.x("UPDATE sessions SET state = 'idle' WHERE local_id = ?", (local_id,))
-        msgs = store.pending(only_new=True)
-        if not msgs or payload.get("stop_hook_active"):
+        if payload.get("stop_hook_active"):
             return None  # never loop: at most one block per stop chain
-        _inject(store, api, s, msgs, f"{runtime}:Stop")
+        msgs = _inject(store, api, s, store.pending(only_new=True), f"{runtime}:Stop")
+        if not msgs:
+            return None
         return {"decision": "block", "reason": render(msgs, project, sid)}
 
     if event == "SubagentStart":
@@ -220,11 +236,63 @@ def handle(
     return None
 
 
+def wait(
+    runtime: str,
+    payload: dict[str, Any],
+    store: Store | None = None,
+    api: Api | None = None,
+    poll: float = WAIT_POLL,
+    max_seconds: float = WAIT_MAX,
+    clock: Callable[[], float] = time.time,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str | None:
+    """Background waiter (`asyncRewake` hook): block until a message for this agent is in the local store, claim it
+    and return the notification; the caller exits 2 so Claude Code wakes the idle session with it.
+
+    Returns None (exit 0, nothing shown) when another waiter already serves the session, when the session ended or
+    its runtime process went away, or after `max_seconds`. Reads only the local store: the supervisor downloads."""
+    local_id = str(payload.get("session_id") or "")
+    if not local_id:
+        return None
+    store = store or Store()
+    key, owner = f"rewake.{local_id}", f"{os.getpid()}:{uuid.uuid4().hex[:8]}"
+    parent, start = os.getppid(), clock()
+    try:
+        while clock() - start < max_seconds:
+            if not store.hold(key, owner, clock(), WAIT_STALE):
+                return None  # one waiter per session: armed at SessionStart, re-armed by every Stop
+            s = store.session(local_id)
+            if (s and s["ended_at"]) or os.getppid() != parent:
+                return None
+            if store.pending(only_new=True):
+                if api is None:
+                    try:
+                        api = api_from_config(load_config())
+                    except SystemExit:
+                        api = None
+                msgs = _inject(store, api, s, store.pending(only_new=True), f"{runtime}:Wait")
+                if msgs:  # a regular hook may have won the race; then keep waiting
+                    if s:
+                        store.activity(local_id, "rewake", ",".join(str(m["message_id"]) for m in msgs), progress=False)
+                    return render(msgs, load_config().get("project"), (s or {}).get("server_id") or None)
+            sleep(poll)
+        return None
+    finally:
+        store.unhold(key, owner)
+
+
 def main(runtime: str, event: str) -> None:
     """Entry point. Fail open: a broken coordination layer must never break the agent's own work."""
     try:
         raw = sys.stdin.buffer.read().decode("utf-8", "replace")  # runtimes send UTF-8 JSON (Windows: not the locale)
         payload = json.loads(raw) if raw.strip() else {}
+        if event == "Wait":
+            text = wait(runtime, payload)
+            if text:
+                sys.stderr.write(text + "\n")
+                sys.stderr.flush()
+                sys.exit(2)  # asyncRewake: exit 2 wakes the model with this output
+            sys.exit(0)
         out = handle(runtime, event, payload)
         if out:
             sys.stdout.write(json.dumps(out))

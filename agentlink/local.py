@@ -248,20 +248,27 @@ class Store:
         session: str | None = None,
         via: str | None = None,
         evidence: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> list[int]:
         """Advance the local state, never backwards. One conditional UPDATE per message, so hooks and the supervisor
-        (separate processes) cannot interleave a read and a write and regress a state."""
+        (separate processes) cannot interleave a read and a write and regress a state.
+
+        Returns the ids this call actually advanced: when two hooks race for the same message, only one of them
+        gets it back, so it reaches the model once."""
         order = ["delivered_to_supervisor", "injected_to_runtime", "acknowledged", "processed"]
         rank = "CASE state " + " ".join(f"WHEN '{st}' THEN {i}" for i, st in enumerate(order)) + " ELSE -1 END"
+        moved = []
         with closing(self._conn()) as c:
             for mid in ids:
-                c.execute(
+                cur = c.execute(
                     "UPDATE inbox SET state = ?, injected_at = COALESCE(injected_at, CASE WHEN ? = 'injected_to_runtime' "
                     "THEN ? END), injected_session = COALESCE(?, injected_session), injected_via = COALESCE(?, injected_via), "
                     f"evidence = COALESCE(?, evidence) WHERE message_id = ? AND {rank} < ?",
                     (state, state, time.time(), session, via, json.dumps(evidence) if evidence else None, mid,
                      order.index(state)),
                 )  # fmt: skip
+                if cur.rowcount:
+                    moved.append(mid)
+        return moved
 
     def unreported(self) -> list[dict[str, Any]]:
         """States reached locally but not yet confirmed to the server, grouped by (state, session, evidence)."""
@@ -281,6 +288,22 @@ class Store:
         with closing(self._conn()) as c:
             for mid in ids:
                 c.execute("UPDATE inbox SET reported = ? WHERE message_id = ? AND state = ?", (state, mid, state))
+
+    # single-instance lease (one rewake waiter per runtime session) ------------------------------
+    def hold(self, key: str, owner: str, now: float, stale_after: float) -> bool:
+        """Take or renew `key` for `owner`. Fails while another owner renewed it less than `stale_after` seconds ago.
+        A single conditional upsert, so concurrent processes cannot both win."""
+        value = json.dumps({"owner": owner, "beat": now})
+        return bool(
+            self.x(
+                "INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value "
+                "WHERE json_extract(kv.value, '$.owner') = ? OR json_extract(kv.value, '$.beat') < ?",
+                (key, value, owner, now - stale_after),
+            )
+        )
+
+    def unhold(self, key: str, owner: str) -> None:
+        self.x("DELETE FROM kv WHERE key = ? AND json_extract(value, '$.owner') = ?", (key, owner))
 
     # sessions & activity --------------------------------------------------------------------------
     def session(self, local_id: str) -> dict[str, Any] | None:

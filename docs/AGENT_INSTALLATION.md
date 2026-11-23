@@ -102,6 +102,7 @@ Versions used for the real runs: Claude Code 2.1.330, codex-cli 0.170.0, opencod
 | Observation (activity reaches the server) | SUPPORTED_AND_TESTED (hooks) | IMPLEMENTED_NOT_VERIFIED (needs trusted hooks) | IMPLEMENTED_NOT_VERIFIED (plugin) | PARTIALLY_SUPPORTED (only what the agent reports) |
 | Notification (supervisor receives + confirms) | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED (automated) |
 | Injection (message reaches the model) | SUPPORTED_AND_TESTED (hook `additionalContext`) | SUPPORTED_AND_TESTED (headless `codex exec`) | SUPPORTED_AND_TESTED (headless `opencode run`) | UNSUPPORTED |
+| Rewake (wake an open, idle session) | IMPLEMENTED_NOT_VERIFIED (`asyncRewake` hook) | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED |
 | Resume (wake a stopped session) | PARTIALLY_SUPPORTED | IMPLEMENTED_NOT_VERIFIED | IMPLEMENTED_NOT_VERIFIED | UNSUPPORTED |
 | Acknowledgement | SUPPORTED_AND_TESTED (`agentlink ack` by the agent) | PARTIALLY_SUPPORTED (relayed by the supervisor) | PARTIALLY_SUPPORTED (relayed) | SUPPORTED_AND_TESTED (automated) |
 | Processing (answer with evidence) | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED (automated) |
@@ -120,6 +121,11 @@ only), behaviour on macOS/Windows.
 
 - At session start the agent gets the protocol and its pending messages (`#id @author [kind] …`).
 - After tool calls / on the next prompt it gets new messages; urgent ones block `Stop` once so they are handled.
+- While the session is open but idle (waiting for the participant), a background `asyncRewake` hook
+  (`agentlink hook claude-code Wait`, installed by `agentlink connect` on `SessionStart` and `Stop`) watches the local
+  inbox; when a message arrives it exits 2 and Claude Code wakes the model with the notice. One waiter per session,
+  re-armed after every turn, gone when the session ends. It needs a Claude Code version with `asyncRewake` hooks
+  (`agentlink doctor` reports `rewake_missing`); without it delivery falls back to the next safe point.
 - If its task lease is lost: an urgent **AUTHORITY LOST** notice (see [AGENT_PROTOCOL.md](AGENT_PROTOCOL.md#6-recovery-what-the-agent-sees)).
 - The hooks **fail open**: if the server is down the runtime keeps working; messages arrive when it is back.
 

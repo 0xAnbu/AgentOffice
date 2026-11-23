@@ -258,3 +258,89 @@ def test_opt_in_headless_delivery_runs_once_and_relays_answer(
     assert reply["author"] == "dani-codex" and "200 {token}" in reply["body"]
     assert codex.sup.once(wait=0)["headless"] is None  # already handled: no second paid turn
     assert calls.read_text().count("run") == 1
+
+
+class _Clock:
+    """Fake time for the rewake waiter: every sleep advances it, so loops end without real waiting."""
+
+    def __init__(self) -> None:
+        self.t = 1000.0
+
+    def __call__(self) -> float:
+        return self.t
+
+    def sleep(self, s: float) -> None:
+        self.t += s
+
+
+def test_rewake_waiter_wakes_idle_session_once(pair: tuple[Participant, Participant], office: Office) -> None:
+    a, b = pair
+    b.hook("SessionStart", local_id="rt-b")
+    b.hook("Stop", local_id="rt-b")  # the session is idle: only the waiter can reach it now
+    clock = _Clock()
+    assert hooks.wait("claude-code", {"session_id": "rt-b"}, b.store, b.api, max_seconds=30, clock=clock,
+                      sleep=clock.sleep) is None  # fmt: skip
+    assert clock.t >= 1030  # nothing arrived: it waited the whole budget and gave up quietly
+    msg = a.api.call("POST", "/api/channels/alpha-dev/messages", {"body": "@cris-opencode are you there?"})
+    b.sup.once(wait=0)
+    text = hooks.wait("claude-code", {"session_id": "rt-b"}, b.store, b.api, max_seconds=30, clock=clock,
+                      sleep=clock.sleep)  # fmt: skip
+    assert text and f"#{msg['id']}" in text and "are you there?" in text
+    assert _deliv(office, msg["id"]) == "injected_to_runtime"
+    assert b.hook("UserPromptSubmit", local_id="rt-b", prompt="x") is None  # the waiter won it: not shown twice
+    assert b.hook("Stop", local_id="rt-b") is None
+    assert b.store.get("rewake.rt-b") is None  # the hold is released on exit
+
+
+def test_rewake_waiter_is_single_instance_and_stops_with_the_session(
+    pair: tuple[Participant, Participant], office: Office
+) -> None:
+    a, b = pair
+    b.hook("SessionStart", local_id="rt-b")
+    clock = _Clock()
+    assert b.store.hold("rewake.rt-b", "other-waiter", clock(), hooks.WAIT_STALE)
+    a.api.call("POST", "/api/channels/alpha-dev/messages", {"body": "@cris-opencode ping"})
+    b.sup.once(wait=0)
+    w = {"session_id": "rt-b"}
+    assert hooks.wait("claude-code", w, b.store, b.api, clock=clock, sleep=clock.sleep) is None  # a live one serves it
+    assert len(b.store.pending(only_new=True)) == 1  # untouched for the live waiter
+    clock.t += hooks.WAIT_STALE + 1  # the other waiter died without releasing: it is taken over
+    assert "ping" in (hooks.wait("claude-code", w, b.store, b.api, clock=clock, sleep=clock.sleep) or "")
+    b.hook("SessionEnd", local_id="rt-b", reason="exit")
+    a.api.call("POST", "/api/channels/alpha-dev/messages", {"body": "@cris-opencode later"})
+    b.sup.once(wait=0)
+    assert hooks.wait("claude-code", w, b.store, b.api, clock=clock, sleep=clock.sleep) is None  # session over
+    assert hooks.wait("claude-code", {}, b.store, b.api) is None  # no session id: nothing to wake
+
+
+def test_rewake_hook_exit_codes(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import io
+
+    for text, code in (("[AgentOffice] 1 message(s)", 2), (None, 0)):
+        monkeypatch.setattr(hooks, "wait", lambda *a, _t=text, **k: _t)
+        monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b'{"session_id": "s"}')))
+        with pytest.raises(SystemExit) as e:
+            hooks.main("claude-code", "Wait")
+        assert e.value.code == code
+        err = capsys.readouterr()
+        assert err.out == "" and ((text or "") in err.err)
+
+
+def test_install_arms_rewake_only_where_supported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENTLINK_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    proj = tmp_path / "repo"
+    proj.mkdir()
+    ad = ADAPTERS["claude-code"]
+    ad.install("project", str(proj))
+    data = json.loads((proj / ".claude" / "settings.json").read_text())["hooks"]
+    for ev in ("SessionStart", "Stop"):
+        waiters = [h for e in data[ev] for h in e["hooks"] if h["command"].endswith(" Wait")]
+        assert len(waiters) == 1 and waiters[0]["asyncRewake"] is True and waiters[0]["timeout"] >= hooks.WAIT_MAX
+    assert not any(h["command"].endswith(" Wait") for e in data["UserPromptSubmit"] for h in e["hooks"])
+    assert ad.doctor("project", str(proj))["rewake_missing"] == []
+    assert ad.install("project", str(proj))["added"] == []  # idempotent with the extra hook too
+    ad.uninstall("project", str(proj))
+    assert "hooks" not in json.loads((proj / ".claude" / "settings.json").read_text())
+    ADAPTERS["codex"].install("user")
+    assert "Wait" not in (tmp_path / "codex" / "hooks.json").read_text()
