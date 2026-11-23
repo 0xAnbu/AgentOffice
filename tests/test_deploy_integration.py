@@ -467,10 +467,13 @@ def untested_ctx(tmp_path: Path, release: dict[str, str], **kw: Any) -> Any:
 
 def test_untested_distribution_is_a_warning_not_a_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(P, "reach", lambda host, port=443, timeout=5: None)
+    no_tailscale(monkeypatch)
+    monkeypatch.setattr(P, "has_apt", lambda: True)
     ctx = untested_ctx(tmp_path, {"ID": "linuxmint", "ID_LIKE": "ubuntu debian", "UBUNTU_CODENAME": "noble"})
     rows = {r[0]: r for r in P.precheck(ctx)}
     assert rows["Platform"][1] == "WARN" and "not a tested distribution" in rows["Platform"][2]
-    assert "Tailscale install" not in rows  # the Ubuntu repository of the parent distribution is used
+    # unattended: the Ubuntu repository of the parent distribution is used
+    assert rows["Tailscale install"][1] == P.PASS and "apt repository" in rows["Tailscale install"][2]
 
 
 def test_no_tailscale_repository_requires_a_manual_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
