@@ -194,7 +194,7 @@ function arrancar() {
   if (!token.get()) { $('login').hidden = false; return; }
   $('login').hidden = true;
   $('app').hidden = false;
-  api('/api/me').then((me) => { st.admin = me.role === 'admin'; $('whoami').textContent = `${me.agent} (${me.role})`; cargar(); }).catch((e) => { if (e.status === 401) salir('Token inválido o revocado'); });
+  api('/api/me').then((me) => { st.admin = me.role === 'admin'; $('nav-admin').hidden = !st.admin; $('whoami').textContent = `${me.agent} (${me.role})`; cargar(); }).catch((e) => { if (e.status === 401) salir('Token inválido o revocado'); });
   st.conn = conectar({
     onSnapshot: (s) => { st.snap = s; pintarLado(); },
     onEvents: (evs) => {

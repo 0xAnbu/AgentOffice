@@ -424,6 +424,11 @@ routes = [
         W(lambda h, p, r, b: directory.delete_channel(h.db, p, path(r, "ch"))),
         methods=["DELETE"],
     ),
+    Route(
+        "/api/admin/projects/{project}",
+        W(lambda h, p, r, b: projects.delete_project(h.db, p, path(r, "project"))),
+        methods=["DELETE"],
+    ),
     Route("/api/admin/audit", R(lambda h, p, r, b: directory.audit_log(h.db, p))),
     Route(
         "/api/admin/agents/{name}",

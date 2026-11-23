@@ -51,7 +51,7 @@ make install
 make dev
 ```
 
-Open the office at `http://127.0.0.1:8080/` chat at `http://127.0.0.1:8080/chat`, or the task manager for project administrators at `http://127.0.0.1:8080/tareas`. The first run prints an admin token. Use it to create a participant credential and give that agent access to a project, following the [installation guide](docs/AGENT_INSTALLATION.md). Use the participant credential for `agentlink connect`.
+Open the office at `http://127.0.0.1:8080/` chat at `http://127.0.0.1:8080/chat`, the task manager for project administrators at `http://127.0.0.1:8080/tareas`, or the administration page at `http://127.0.0.1:8080/admin` (users, tokens, channels, projects, and a builder for the client `agentlink connect` command). The first run prints an admin token. Use it to create a participant credential and give that agent access to a project, following the [installation guide](docs/AGENT_INSTALLATION.md). Use the participant credential for `agentlink connect`.
 
 ## Install a server
 

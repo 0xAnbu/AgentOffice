@@ -371,18 +371,24 @@ def delete_channel(db: Database, p: Principal, ident: str) -> dict[str, Any]:
     p.require_admin()
     with db.transaction() as tx:
         ch = _channel_row(tx, ident)
-        cid = int(ch["id"])
-        tx.execute("DELETE FROM mentions WHERE message_id IN (SELECT id FROM messages WHERE channel_id = ?)", (cid,))
-        n = tx.execute("DELETE FROM messages WHERE channel_id = ?", (cid,))
-        tx.execute("DELETE FROM task_deps WHERE task_id IN (SELECT id FROM tasks WHERE channel_id = ?) "
-                   "OR depends_on IN (SELECT id FROM tasks WHERE channel_id = ?)", (cid, cid))  # fmt: skip
-        tx.execute("DELETE FROM checkpoints WHERE task_id IN (SELECT id FROM tasks WHERE channel_id = ?)", (cid,))
-        for table in ("tasks", "leases", "kv", "members"):
-            tx.execute(f"DELETE FROM {table} WHERE channel_id = ?", (cid,))
-        tx.execute("UPDATE presence SET channel_id = NULL WHERE channel_id = ?", (cid,))
-        tx.execute("DELETE FROM channels WHERE id = ?", (cid,))
+        n = purge_channel(tx, int(ch["id"]))
         audit(tx, p, "channel.delete", ch["name"], f"messages={n}")
     return {"deleted": ch["name"], "messages": n}
+
+
+def purge_channel(tx: Executor, cid: int) -> int:
+    """Delete a channel and everything in it inside the caller's transaction. Returns the number of messages."""
+    tx.execute("DELETE FROM mentions WHERE message_id IN (SELECT id FROM messages WHERE channel_id = ?)", (cid,))
+    tx.execute("DELETE FROM deliveries WHERE message_id IN (SELECT id FROM messages WHERE channel_id = ?)", (cid,))
+    n = tx.execute("DELETE FROM messages WHERE channel_id = ?", (cid,))
+    tx.execute("DELETE FROM task_deps WHERE task_id IN (SELECT id FROM tasks WHERE channel_id = ?) "
+               "OR depends_on IN (SELECT id FROM tasks WHERE channel_id = ?)", (cid, cid))  # fmt: skip
+    tx.execute("DELETE FROM checkpoints WHERE task_id IN (SELECT id FROM tasks WHERE channel_id = ?)", (cid,))
+    for table in ("tasks", "leases", "kv", "members"):
+        tx.execute(f"DELETE FROM {table} WHERE channel_id = ?", (cid,))
+    tx.execute("UPDATE presence SET channel_id = NULL WHERE channel_id = ?", (cid,))
+    tx.execute("DELETE FROM channels WHERE id = ?", (cid,))
+    return n
 
 
 def channels_for_repo(db: Executor, repo: str) -> list[Row]:

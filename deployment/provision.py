@@ -104,9 +104,44 @@ def redact(text: str) -> str:
     return text
 
 
+def _tty(stream: Any) -> bool:
+    return (
+        "NO_COLOR" not in os.environ
+        and os.environ.get("TERM") != "dumb"
+        and bool(getattr(stream, "isatty", None))
+        and stream.isatty()
+    )
+
+
+_COLORS = {"bold": "1", "dim": "2", "red": "31", "green": "32", "yellow": "33", "blue": "34", "cyan": "36"}
+
+
+def paint(text: str, *styles: str, stream: Any = None) -> str:
+    """ANSI colour only on a terminal (and never with NO_COLOR); log files and pipes stay plain."""
+    if not styles or not _tty(stream or sys.stdout):
+        return text
+    return "\033[" + ";".join(_COLORS[x] for x in styles) + "m" + text + "\033[0m"
+
+
+_LOG_STYLES = {"DO": ("green", "▸"), "PLAN": ("yellow", "◦"), "ERROR:": ("red", "✖"), "HINT:": ("yellow", "➜"),
+               "WARN:": ("yellow", "⚠")}  # fmt: skip
+
+
+def _pretty(msg: str) -> str:
+    """How a log line looks on a terminal: stage headers stand out, DO/PLAN/ERROR get a symbol and a colour."""
+    if msg.startswith("== "):
+        return "\n" + paint("━━ " + msg[3:], "cyan", "bold", stream=sys.stderr)
+    word, _, rest = msg.partition(" ")
+    if word in _LOG_STYLES:
+        color, mark = _LOG_STYLES[word]
+        return paint(f"  {mark} {word.rstrip(':')}", color, "bold", stream=sys.stderr) + " " + rest.lstrip()
+    return paint("  · ", "dim", stream=sys.stderr) + msg
+
+
 def log(msg: str) -> None:
     line = redact(f"[agent-office] {msg}")
-    print(line, file=sys.stderr, flush=True)
+    shown = _pretty(redact(msg)) if _tty(sys.stderr) else line
+    print(shown, file=sys.stderr, flush=True)
     if _LOG_FILE is not None:
         with contextlib.suppress(OSError), open(_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"{dt.datetime.now(dt.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')} {line}\n")
@@ -178,7 +213,7 @@ SCHEMA: dict[str, dict[str, tuple[type, Any]]] = {
     "python": {"version": (str, "3.12"), "interpreter": (str, "")},
     "network": {
         "provider": (str, "tailscale"),
-        "tag": (str, "tag:agentoffice-server"),
+        "tag": (str, "tag:agentoffice"),
         "tailnet": (str, ""),
         "https": (bool, True),
         "https_port": (int, 443),
@@ -189,7 +224,7 @@ SCHEMA: dict[str, dict[str, tuple[type, Any]]] = {
         "api_url": (str, "https://healthchecks.io"),
         "interval_seconds": (int, 300),
         "grace_seconds": (int, 600),
-        "check_name": (str, "agentoffice-production"),
+        "check_name": (str, "agentoffice"),
         "tags": (str, "agentoffice"),
         "channels": (str, "*"),
         "adopt_existing": (bool, False),
@@ -202,6 +237,7 @@ SCHEMA: dict[str, dict[str, tuple[type, Any]]] = {
         "repositories": (list, []),
     },
 }
+DEFAULT_WEBHOOK_REPO = "Pigglet-Company/winnie-the-root"  # proposed by the wizard (install.sh --wizard)
 HOSTNAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 TAG_RE = re.compile(r"^tag:[A-Za-z][A-Za-z0-9-]{0,62}$")
 TAILNET_RE = re.compile(r"^[A-Za-z0-9.@_-]{1,253}$")
@@ -272,7 +308,7 @@ def _semantic_errors(c: dict[str, dict[str, Any]]) -> list[str]:
         if not n["https"]:
             err.append("network.https must be true: the tailnet entry point is HTTPS (Tailscale Serve)")
         if not TAG_RE.match(n["tag"]):
-            err.append("network.tag must look like tag:agentoffice-server")
+            err.append("network.tag must look like tag:agentoffice")
         if n["tailnet"] and not TAILNET_RE.match(n["tailnet"]):
             err.append("network.tailnet must be a tailnet name such as example.com or tail1234.ts.net")
         if not 1 <= n["https_port"] <= 65535:
@@ -2720,8 +2756,8 @@ def cmd_bootstrap(a: argparse.Namespace) -> int:
             print("\nCHECK: " + ("FAILED" if failed else "OK (nothing was changed)"))
         return 1 if failed else 0
     ctx.state.mark("precheck", "done") if mode == "apply" else None
-    for name, fn in STAGES:
-        log(f"== {name}")
+    for i, (name, fn) in enumerate(STAGES, 1):
+        log(f"== [{i}/{len(STAGES)}] {name}")
         try:
             fn(ctx)
         except DeployError as e:
@@ -2737,17 +2773,112 @@ def cmd_bootstrap(a: argparse.Namespace) -> int:
         if not ctx.plan:
             print("  nothing to do: the deployment already matches the configuration")
         return 0
-    return cmd_verify_ctx(ctx)
+    return cmd_verify_ctx(ctx, show_access=True)
 
 
-def cmd_verify_ctx(ctx: Ctx) -> int:
+_STATUS_STYLE = {PASS: ("✔", "green"), FAIL: ("✖", "red"), NOT_VERIFIED: ("?", "yellow"), SKIPPED: ("-", "dim"),
+                 "SUCCESS": ("✔", "green"), "FAILED": ("✖", "red"), "INCOMPLETE": ("?", "yellow")}  # fmt: skip
+
+
+_REPORT_ROW = re.compile(r"^(\S[^:]*:\s+)(PASS|FAIL|NOT_VERIFIED|SKIPPED|SUCCESS|FAILED|INCOMPLETE)\b(.*)$")
+
+
+def paint_report(text: str) -> str:
+    """The report on a terminal: status words with a symbol and colour. The report file keeps the plain text."""
+    if not _tty(sys.stdout):
+        return text
+    out = []
+    for line in text.splitlines():
+        m = _REPORT_ROW.match(line)
+        if line == "AGENTOFFICE DEPLOYMENT REPORT":
+            line = paint(line, "bold")
+        elif m:
+            label, status, rest = m.groups()
+            mark, color = _STATUS_STYLE[status]
+            final = status in ("SUCCESS", "FAILED", "INCOMPLETE")
+            line = label + paint(f"{mark} {status}", color, *(("bold",) if final else ())) + rest
+        out.append(line)
+    return "\n".join(out) + ("\n" if text.endswith("\n") else "")
+
+
+def access_url(ctx: Ctx) -> str:
+    if ctx.ts and ctx.tailscale and ctx.ts.dns_name:
+        port = int(ctx.cfg["network"]["https_port"])
+        return f"https://{ctx.ts.dns_name}{'' if port == 443 else f':{port}'}"
+    return f"http://127.0.0.1:{ctx.port}"
+
+
+def project_env_path(paths: Paths) -> Path | None:
+    """The .env of the checkout that ran deploy.sh, the same file `make dev` writes (AO_PROJECT_ENV overrides it).
+    The test sandbox (AO_USER_MODE=1) never touches the developer's real .env unless AO_PROJECT_ENV says so."""
+    explicit = os.environ.get("AO_PROJECT_ENV", "")
+    if explicit:
+        return Path(explicit)
+    if paths.user_mode:
+        return None
+    return REPO / ".env"
+
+
+def save_project_token(paths: Paths, token: str) -> Path | None:
+    """AGENTLINK_ADMIN_TOKEN=... in the checkout's .env (mode 0600, owned by the sudo user); other lines are kept."""
+    f = project_env_path(paths)
+    if f is None or not token:
+        return None
+    try:
+        if not f.exists():
+            fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                fh.write("AGENTLINK_DB_PATH=data/agentlink.db\n")
+        env_set(f, "AGENTLINK_ADMIN_TOKEN", token)
+        os.chmod(f, 0o600)
+        uid, gid = os.environ.get("SUDO_UID", ""), os.environ.get("SUDO_GID", "")
+        if os.geteuid() == 0 and uid.isdigit() and gid.isdigit():
+            os.chown(f, int(uid), int(gid))
+    except OSError as e:
+        log(f"WARN: could not save the admin token in {f}: {e}")
+        return None
+    return f
+
+
+def access_box(url: str, token: str, saved: Path | None, env_file: Path) -> str:
+    """Printed on stdout only, outside redact(): never written to the log or the report file."""
+    rows = [
+        ("URL", url, ("bold",)),
+        ("Admin token", token or f"(not found in {env_file})", ("bold", "green") if token else ("red",)),
+        ("Saved in", f"{saved} (like make dev)" if saved else str(env_file), ()),
+        ("Admin page", f"{url}/admin", ()),
+    ]
+    w = max(len(k) for k, _, _ in rows) + 2
+    inner = max(w + len(v) for _, v, _ in rows) + 2
+    title = " AgentOffice access "
+    lines = ["", paint("╭─" + title + "─" * (inner - len(title) - 1) + "╮", "cyan")]
+    for k, v, st in rows:
+        pad = " " * (inner - 1 - w - len(v))
+        lines.append(paint("│", "cyan") + " " + (k + ":").ljust(w) + paint(v, *st) + pad + paint("│", "cyan"))
+    lines.append(paint("╰" + "─" * inner + "╯", "cyan"))
+    lines.append(paint("Keep the token private: it can do everything. Rotate it from /admin if it leaks.", "dim"))
+    return "\n".join(lines) + "\n"
+
+
+def print_access(ctx: Ctx) -> None:
+    token = env_get(ctx.paths.env_file, "AGENTLINK_ADMIN_TOKEN")
+    saved = save_project_token(ctx.paths, token)
+    if saved:
+        log(f"admin token saved in {saved}")
+    sys.stdout.write(access_box(access_url(ctx), token, saved, ctx.paths.env_file))
+    sys.stdout.flush()
+
+
+def cmd_verify_ctx(ctx: Ctx, *, show_access: bool = False) -> int:
     rows = verify_live(ctx)
     text = render_report(ctx, rows)
-    print(text)
+    print(paint_report(text))
     with contextlib.suppress(OSError):
         write_report(ctx, text)
     if ctx.state.enabled and not ctx.dry_run:
         ctx.state.set("last_verify", {"at": now_iso(), "result": overall(rows)})
+    if show_access:
+        print_access(ctx)
     return 0 if overall(rows) == "SUCCESS" else 1
 
 
@@ -2869,9 +3000,7 @@ def cmd_wizard(a: argparse.Namespace) -> int:
                 )
                 return 1
             deploy_flags.append("--install-tailscale")
-        ans["tag"] = ask(
-            "Device tag", "tag:agentoffice-server", lambda v: bool(TAG_RE.match(v)), "like tag:agentoffice-server"
-        )
+        ans["tag"] = ask("Device tag", "tag:agentoffice", lambda v: bool(TAG_RE.match(v)), "like tag:agentoffice")
         ans["tailnet"] = ask(
             "Expected tailnet name (Enter: do not check)", "", lambda v: not v or bool(TAILNET_RE.match(v))
         )
@@ -2885,7 +3014,7 @@ def cmd_wizard(a: argparse.Namespace) -> int:
             if k:
                 sec["tailscale_auth_key"] = k
         print("\n-- Healthchecks.io (docs/DEPLOYMENT_SETUP_GUIDE.md §D)")
-        ans["check_name"] = ask("Check name", "agentoffice-production", lambda v: bool(CHECK_NAME_RE.match(v)))
+        ans["check_name"] = ask("Check name", "agentoffice", lambda v: bool(CHECK_NAME_RE.match(v)))
         ans["channels"] = "*"
         if not env_get(paths.env_file, "HC_PING_URL") or yes(
             "HC_PING_URL is already configured. Re-check it with an API key?", False
@@ -2907,10 +3036,10 @@ def cmd_wizard(a: argparse.Namespace) -> int:
                                           lambda v: v == "*" or all(x.strip() in names for x in v.split(",")),
                                           f"choose among {names}")  # fmt: skip
         print("\n-- GitHub webhook (optional; publishes ONLY the webhook endpoint with Tailscale Funnel)")
-        if yes("Receive GitHub events (push, PRs, issues, CI) in channels?", False):
+        if yes("Receive GitHub events (push, PRs, issues, CI) in channels?", True):
             ans["webhook"] = True
             ans["funnel_port"] = ask("Funnel port", "8443", lambda v: v in ("8443", "10000"), "8443 or 10000")
-            repos = ask("Repositories (owner/name, comma-separated)", "",
+            repos = ask("Repositories (owner/name, comma-separated)", DEFAULT_WEBHOOK_REPO,
                         lambda v: all(REPO_RE.match(x.strip()) for x in v.split(",")), "like owner/repo")  # fmt: skip
             ans["repos"] = [x.strip() for x in repos.split(",")]
             k = ask_secret("GitHub token to create the webhooks (admin:repo_hook / Webhooks read-write)")

@@ -129,6 +129,12 @@ async def tareas(_: Request) -> Response:
     return FileResponse(STATIC / "tareas" / "index.html")
 
 
+async def admin_page(_: Request) -> Response:
+    """Administration (users, tokens, channels, projects, audit, client onboarding). The page itself is public static
+    content; every action is an admin-only API call, so a non-admin token sees nothing."""
+    return FileResponse(STATIC / "admin" / "index.html")
+
+
 async def _reconcile_loop() -> None:
     """Recovery supervisor: runs inside the single backend, on the same DB and transaction model."""
     from starlette.concurrency import run_in_threadpool
@@ -176,6 +182,7 @@ def create_app(webhook_port: int | None = None) -> Starlette:
             Route("/", index),
             Route("/chat", chat),
             Route("/tareas", tareas),
+            Route("/admin", admin_page),
             Mount("/office", app=StaticFiles(directory=STATIC / "office"), name="office"),
             Mount("/static", app=StaticFiles(directory=STATIC), name="static"),
         ],

@@ -19,7 +19,7 @@ interpreter = ""               # absolute path to force a specific interpreter; 
 
 [network]
 provider = "tailscale"
-tag = "tag:agentoffice-server" # must be in tagOwners of your tailnet policy and in the auth key
+tag = "tag:agentoffice" # must be in tagOwners of your tailnet policy and in the auth key
 tailnet = ""                   # optional safety check, e.g. "example.com" or "tail1234.ts.net"
 https = true                   # fixed: private HTTPS with a Let's Encrypt certificate managed by Tailscale
 https_port = 443
@@ -30,7 +30,7 @@ provider = "healthchecks"
 api_url = "https://healthchecks.io"
 interval_seconds = 300         # >= 300: the local health check timer runs every 5 minutes
 grace_seconds = 600
-check_name = "agentoffice-production"
+check_name = "agentoffice"
 tags = "agentoffice"
 channels = "*"                 # "*" = every integration of the project, or comma-separated integration names
 adopt_existing = false         # true = manage an existing check with this name that the bootstrap did not create
@@ -43,7 +43,8 @@ enabled = false                # true = publish ONLY the webhook endpoint (port 
 port = 8081                    # loopback listener that answers only POST /api/github/webhook
 funnel_port = 8443             # 443, 8443 or 10000, and different from network.https_port
 
-# One block per repository whose events should reach a channel (channel defaults to the repository name):
+# One block per repository whose events should reach a channel (channel defaults to the repository name).
+# install.sh --wizard enables the webhook and proposes this repository by default:
 # [[github_webhook.repositories]]
-# repo = "your-org/your-repo"
-# channel = "your-repo"
+# repo = "Pigglet-Company/winnie-the-root"
+# channel = "winnie-the-root"

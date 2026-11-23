@@ -403,7 +403,7 @@ def ts_status(backend: str = "Running", **kw: Any) -> dict[str, Any]:
         "Self": {
             "DNSName": "agentoffice.tail1234.ts.net.",
             "TailscaleIPs": ["100.64.0.5", "fd7a::5"],
-            "Tags": ["tag:agentoffice-server"],
+            "Tags": ["tag:agentoffice"],
         },
         "CurrentTailnet": {"Name": "example.com", "MagicDNSSuffix": "tail1234.ts.net", "MagicDNSEnabled": True},
         "CertDomains": ["agentoffice.tail1234.ts.net"],
@@ -508,7 +508,7 @@ def test_channel_selection() -> None:
 def test_desired_check_and_drift() -> None:
     m = cfg("")["monitoring"]
     want = P.desired_check(m, ["c1", "c2"])
-    assert want["timeout"] == 300 and want["grace"] == 600 and want["name"] == "agentoffice-production"
+    assert want["timeout"] == 300 and want["grace"] == 600 and want["name"] == "agentoffice"
     assert P.MANAGED_MARKER in want["desc"] and want["channels"] == "c1,c2"
     same = {**want, "channels": "c2,c1", "tags": "agentoffice"}
     assert P.check_drift(same, want) == []
@@ -625,7 +625,7 @@ def test_state_file_is_private(tmp_path: Path) -> None:
 
 def test_wizard_config_rendering_is_valid_toml_and_escapes() -> None:
     ans = {"mode": "production", "hostname": "agentoffice", "port": "8080", "network": "tailscale",
-           "tag": "tag:agentoffice-server", "tailnet": "", "monitoring": "healthchecks", "check_name": "agentoffice-production",
+           "tag": "tag:agentoffice", "tailnet": "", "monitoring": "healthchecks", "check_name": "agentoffice",
            "channels": "*", "webhook": True, "funnel_port": "8443", "repos": ["o/r", "o/s"]}  # fmt: skip
     c = P.parse_config(P.render_config(ans))
     assert c["github_webhook"]["enabled"] and [r["repo"] for r in c["github_webhook"]["repositories"]] == ["o/r", "o/s"]
@@ -633,3 +633,49 @@ def test_wizard_config_rendering_is_valid_toml_and_escapes() -> None:
     assert P.parse_config(
         P.render_config({**ans, "mode": "development", "network": "none", "monitoring": "none", "webhook": False})
     )
+
+
+# -- access summary after deploy.sh ---------------------------------------------------------------------------------
+
+TOKEN = "al_" + "A" * 40
+
+
+def test_admin_token_is_saved_in_the_project_env_keeping_other_lines(tmp_path: Path, monkeypatch: Any) -> None:
+    env = tmp_path / ".env"
+    env.write_text("FOO=1\nAGENTLINK_ADMIN_TOKEN=al_old\nAGENTLINK_DB_PATH=data/agentlink.db\n")
+    monkeypatch.setenv("AO_PROJECT_ENV", str(env))
+    paths = P.Paths.from_env({"AO_ETC": str(tmp_path / "etc"), "AO_USER_MODE": "1"})
+    assert P.save_project_token(paths, TOKEN) == env
+    assert env.read_text().splitlines() == [
+        "FOO=1",
+        f"AGENTLINK_ADMIN_TOKEN={TOKEN}",
+        "AGENTLINK_DB_PATH=data/agentlink.db",
+    ]
+    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+    env.unlink()  # a fresh checkout gets the same .env as `make dev`
+    P.save_project_token(paths, TOKEN)
+    assert P.env_get(env, "AGENTLINK_ADMIN_TOKEN") == TOKEN and P.env_get(env, "AGENTLINK_DB_PATH")
+
+
+def test_the_sandbox_never_touches_the_developer_env(monkeypatch: Any, tmp_path: Path) -> None:
+    monkeypatch.delenv("AO_PROJECT_ENV", raising=False)
+    assert P.project_env_path(P.Paths.from_env({"AO_USER_MODE": "1"})) is None
+    assert P.project_env_path(P.Paths.from_env({})) == P.REPO / ".env"
+
+
+def test_access_box_shows_the_token_unredacted_and_aligned(monkeypatch: Any) -> None:
+    monkeypatch.setenv("NO_COLOR", "1")
+    P.register_secret(TOKEN)
+    box = P.access_box("https://agentoffice.example.ts.net", TOKEN, Path("/src/.env"), Path("/etc/agent-office/x.env"))
+    assert TOKEN in box and "https://agentoffice.example.ts.net/admin" in box and "\033[" not in box
+    framed = [line for line in box.splitlines() if line.startswith(("╭", "│", "╰"))]
+    assert len(framed) == 6 and len({len(line) for line in framed}) == 1
+    assert "(not found in /e)" in P.access_box("http://127.0.0.1:8080", "", None, Path("/e"))
+
+
+def test_report_colours_only_on_a_terminal(monkeypatch: Any) -> None:
+    text = "AGENTOFFICE DEPLOYMENT REPORT\nAPI:   PASS   ok\nDeployment:  SUCCESS\n"
+    assert P.paint_report(text) == text  # pytest captures stdout: not a terminal
+    monkeypatch.setattr(P, "_tty", lambda stream: True)
+    painted = P.paint_report(text)
+    assert "✔ PASS" in painted and "\033[" in painted and "AGENTOFFICE DEPLOYMENT REPORT" in painted

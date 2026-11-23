@@ -22,7 +22,7 @@ Términos que aparecerán:
 | **Tailscale** | Servicio que crea una red privada cifrada entre tus dispositivos, aunque estén en casas u oficinas distintas. |
 | **tailnet** | Tu red privada de Tailscale: el conjunto de dispositivos y personas que la comparten. |
 | **auth key** | Credencial de un solo propósito que permite a un servidor unirse a la tailnet sin usar tu contraseña personal. |
-| **tag** (etiqueta) | Nombre como `tag:agentoffice-server` que identifica al servidor como "máquina del equipo" en lugar de "dispositivo de una persona". Las reglas de acceso se escriben sobre etiquetas. |
+| **tag** (etiqueta) | Nombre como `tag:agentoffice` que identifica al servidor como "máquina del equipo" en lugar de "dispositivo de una persona". Las reglas de acceso se escriben sobre etiquetas. |
 | **MagicDNS** | Función de Tailscale que da a cada dispositivo un nombre fácil (`agentoffice.tu-red.ts.net`) en lugar de una IP. |
 | **HTTPS / certificado TLS** | El candado del navegador: cifra la conexión y demuestra que hablas con el servidor correcto. Tailscale obtiene y renueva el certificado (de Let's Encrypt) automáticamente. |
 | **Healthchecks.io** | Servicio externo que te avisa (correo, Signal, Telegram…) si tu servidor deja de dar señales de vida. |
@@ -99,13 +99,13 @@ Documentación oficial: [registro](https://login.tailscale.com/start) ·
    Microsoft, GitHub…). La primera vez se crea tu tailnet. Su nombre aparece arriba en la consola (p. ej.
    `example.com` o `tu-usuario.github`). Apúntalo: sirve para el campo opcional `network.tailnet`.
 
-2. **Preparar la etiqueta `tag:agentoffice-server`.** En la consola, abre **Access controls**
+2. **Preparar la etiqueta `tag:agentoffice`.** En la consola, abre **Access controls**
    (<https://login.tailscale.com/admin/acls/file>) y añade la etiqueta a `tagOwners`. Así indicas quién puede crear
    dispositivos con esa etiqueta (los administradores):
 
    ```json
    "tagOwners": {
-     "tag:agentoffice-server": ["autogroup:admin"]
+     "tag:agentoffice": ["autogroup:admin"]
    }
    ```
 
@@ -114,7 +114,7 @@ Documentación oficial: [registro](https://login.tailscale.com/start) ·
 
    ```json
    "grants": [
-     { "src": ["autogroup:member"], "dst": ["tag:agentoffice-server"], "ip": ["tcp:443"] }
+     { "src": ["autogroup:member"], "dst": ["tag:agentoffice"], "ip": ["tcp:443"] }
    ]
    ```
 
@@ -128,7 +128,7 @@ Documentación oficial: [registro](https://login.tailscale.com/start) ·
 
 5. **Crear una auth key para el servidor.** En **Settings → Keys** (<https://login.tailscale.com/admin/settings/keys>)
    pulsa **Generate auth key** y marca:
-   - **Tags**: activado, con `tag:agentoffice-server`. Un dispositivo etiquetado pertenece al equipo, no a tu
+   - **Tags**: activado, con `tag:agentoffice`. Un dispositivo etiquetado pertenece al equipo, no a tu
      usuario, y su clave de dispositivo no caduca por defecto, lo adecuado para un servidor.
    - **Pre-approved**: activado si tu tailnet exige aprobar dispositivos; si no, el servidor quedará "pendiente de
      aprobación" y tendrás que aprobarlo a mano en **Machines**.
@@ -172,7 +172,7 @@ Documentación oficial: [inicio y registro](https://healthchecks.io/) · [docume
 5. **Obtener una Management API key.** En **Settings** del proyecto, sección **API Access**, pulsa **Create API key**.
    Debe ser la clave normal (lectura y escritura), **no** la *read-only*: el instalador necesita crear el check.
 6. **Guardarla temporalmente** igual que la de Tailscale: irá al archivo de secretos del apartado F.
-7. **El instalador crea el check automáticamente**, llamado `agentoffice-production`, con periodo de 5 minutos,
+7. **El instalador crea el check automáticamente**, llamado `agentoffice`, con periodo de 5 minutos,
    gracia de 10 minutos y todos los destinatarios del proyecto asignados. Guarda en el servidor solo la *ping URL*
    del check, nunca la API key.
 8. **No crees el monitor a mano.** Si ya existe un check con ese nombre que no creó el instalador, este no lo toca
@@ -200,7 +200,7 @@ interpreter = ""
 
 [network]
 provider = "tailscale"
-tag = "tag:agentoffice-server"
+tag = "tag:agentoffice"
 tailnet = ""
 https = true
 https_port = 443
@@ -211,7 +211,7 @@ provider = "healthchecks"
 api_url = "https://healthchecks.io"
 interval_seconds = 300
 grace_seconds = 600
-check_name = "agentoffice-production"
+check_name = "agentoffice"
 tags = "agentoffice"
 channels = "*"
 adopt_existing = false
@@ -235,7 +235,7 @@ funnel_port = 8443
 | `python.version` | Python a instalar si el sistema no tiene ≥ 3.12 (Debian 12). | `3.12` | Normalmente nunca (`3.12`, `3.13` o `3.14`). | Otro valor → error de validación. |
 | `python.interpreter` | Ruta absoluta para forzar un Python concreto. | vacío (detectar) | Solo si sabes que quieres uno concreto. | Si no sirve (versión, SQLite, venv) → error explicando por qué. |
 | `network.provider` | Red privada. | `tailscale` | No (en `development` se usa `none`). | — |
-| `network.tag` | Etiqueta del servidor (apartado C). | `tag:agentoffice-server` | Si usas otra etiqueta en tu política. | Si no está en `tagOwners` o en la auth key → Tailscale la rechaza y el instalador lo explica. |
+| `network.tag` | Etiqueta del servidor (apartado C). | `tag:agentoffice` | Si usas otra etiqueta en tu política. | Si no está en `tagOwners` o en la auth key → Tailscale la rechaza y el instalador lo explica. |
 | `network.tailnet` | Comprobación de seguridad: nombre de tu tailnet o su sufijo `tailXXXX.ts.net`. | vacío (sin comprobar) | Recomendado si el servidor pudiera estar ya en otra tailnet. | Si el servidor pertenece a otra tailnet, se detiene sin cambiarla. |
 | `network.https` | HTTPS privado con certificado de Tailscale. | `true` | Nunca: es fijo. | `false` → rechazado. |
 | `network.https_port` | Puerto HTTPS en la tailnet. | `443` | Si ya usas el 443 en ese servidor para otra cosa. | Si ese puerto ya sirve otra cosa en Tailscale Serve, no se sobrescribe y se detiene. |
@@ -244,12 +244,12 @@ funnel_port = 8443
 | `monitoring.api_url` | API de Healthchecks.io. | `https://healthchecks.io` | Solo si usas una instancia propia de Healthchecks. | Debe ser `https://`. |
 | `monitoring.interval_seconds` | Cada cuánto se espera un heartbeat. | `300` | Más alto si quieres menos avisos. | Menos de 300 → rechazado (el timer local va cada 5 min). |
 | `monitoring.grace_seconds` | Margen antes de alertar. | `600` | Más alto en redes inestables. | Fuera de rango → rechazado. |
-| `monitoring.check_name` | Nombre del check. | `agentoffice-production` | Si tienes varios servidores en el mismo proyecto. | Caracteres no permitidos → rechazado. |
+| `monitoring.check_name` | Nombre del check. | `agentoffice` | Si tienes varios servidores en el mismo proyecto. | Caracteres no permitidos → rechazado. |
 | `monitoring.tags` | Etiquetas del check en Healthchecks.io. | `agentoffice` | Opcional. | — |
 | `monitoring.channels` | A quién avisar: `*` = todos los destinatarios del proyecto, o nombres separados por comas. | `*` | Para avisar solo a algunos. | Un nombre inexistente → error con la lista de disponibles. |
 | `monitoring.adopt_existing` | Gestionar un check con ese nombre que no creó el instalador. | `false` | Si creaste el check a mano y quieres que el instalador lo ajuste. | Con `false`, un check ajeno no se modifica y se detiene. |
 | `backup.local_enabled` | Backup local diario (03:30, se guardan 14). | `true` | Nunca: es fijo. | `false` → rechazado. |
-| `github_webhook.enabled` | Opcional: recibir eventos de GitHub (único punto publicado en Internet, ver [DEPLOYMENT.md](DEPLOYMENT.md#github-webhook-tailscale-funnel-webhook-only-listener)). | `false` | Si quieres que los eventos de un repositorio lleguen a un canal. | Requiere producción con Tailscale. |
+| `github_webhook.enabled` | Opcional: recibir eventos de GitHub (único punto publicado en Internet, ver [DEPLOYMENT.md](DEPLOYMENT.md#github-webhook-tailscale-funnel-webhook-only-listener)). | `false` (el asistente `--wizard` propone `true` con `Pigglet-Company/winnie-the-root`) | Si quieres que los eventos de un repositorio lleguen a un canal. | Requiere producción con Tailscale. |
 | `github_webhook.port` | Puerto local del receptor de webhooks (solo atiende `POST /api/github/webhook`). | `8081` | Si está ocupado. | Igual al de la API → rechazado. |
 | `github_webhook.funnel_port` | Puerto público del webhook (Tailscale Funnel solo admite 443, 8443 o 10000). | `8443` | Si el 8443 ya está en uso. | Igual a `https_port` u otro valor → rechazado. |
 | `[[github_webhook.repositories]]` | Un bloque por repositorio: `repo = "org/repo"` y opcional `channel`. | ninguno | Al activar el webhook. | Formato `org/repo` incorrecto → rechazado. |
@@ -353,19 +353,20 @@ sudo deployment/deploy.sh --config /etc/agent-office/deployment.toml --secrets-f
 
 Si Tailscale no está instalado, el instalador pregunta antes de instalarlo con
 `curl -fsSL https://tailscale.com/install.sh | sh`; responde `y` (sin Tailscale la producción falla).
-Tarda unos minutos (la primera vez descarga paquetes y dependencias). Cada paso aparece en pantalla con
-`== <fase>` y las acciones realizadas con `DO`. Si algo falla, se detiene en esa fase con `ERROR:` y una línea `HINT:`
+Tarda unos minutos (la primera vez descarga paquetes y dependencias). Cada fase aparece en pantalla numerada
+(`[3/8] install`) y las acciones realizadas con `DO` (en color si la salida es un terminal; `NO_COLOR=1` lo desactiva
+y el log en `/var/log/agent-office/bootstrap.log` siempre es texto plano). Si algo falla, se detiene en esa fase con `ERROR:` y una línea `HINT:`
 que dice cómo resolverlo. Al volver a ejecutar el mismo comando, **continúa** desde donde quedó.
 
 **6. Consultar el informe final.** Al terminar se imprime el *AGENTOFFICE DEPLOYMENT REPORT*, que también se guarda
 en `/etc/agent-office/bootstrap-report.txt`:
 
 ```text
-Tailscale:         PASS         agentoffice.example.ts.net in example.com, tag:agentoffice-server
+Tailscale:         PASS         agentoffice.example.ts.net in example.com, tag:agentoffice
 TLS Certificate:   PASS         valid for agentoffice.example.ts.net, issuer Let's Encrypt, ...
 API:               PASS         via Serve: /api/health 200, /api/me without token 401, with admin token 200
 WebSocket:         PASS         wss handshake with a single-use ticket ok
-Healthchecks.io:   PASS         check 'agentoffice-production' status up, integrations assigned
+Healthchecks.io:   PASS         check 'agentoffice' status up, integrations assigned
 Local backups:     PASS         timer active; latest agent-office-....db.gz (sha256 ok)
 ...
 Deployment:        SUCCESS
@@ -374,6 +375,12 @@ Deployment:        SUCCESS
 - `SUCCESS`: todo lo obligatorio está verificado.
 - `INCOMPLETE`: algo obligatorio no se pudo comprobar (`NOT_VERIFIED`); el informe dice qué.
 - `FAILED`: algo obligatorio falla (`FAIL`); el informe dice qué.
+
+Debajo del informe aparece el recuadro **AgentOffice access** con la URL privada, el **token de administrador** y
+la página `/admin`. El token se guarda además en el `.env` del repositorio desde el que lanzaste `deploy.sh` (la
+misma línea `AGENTLINK_ADMIN_TOKEN=` que escribe `make dev`, permisos `600` y dueño tu usuario), así que `./admin`
+funciona sin buscarlo. Solo se muestra en pantalla: no se escribe en el log ni en `bootstrap-report.txt`.
+`sudo deployment/start.sh` vuelve a mostrar la URL y el token.
 
 Las líneas *MagicDNS (server)* y *Other devices* son informativas: el servidor no puede comprobar por sí mismo que
 otros dispositivos lleguen a él (ver apartado L).
@@ -405,7 +412,7 @@ Guárdalo en tu gestor de contraseñas.
   (heartbeats) y `sudo less /var/log/agent-office/bootstrap.log` (instalador).
 - **Backups locales:** `sudo ls -l /var/backups/agent-office/`: debe haber al menos un `agent-office-<fecha>.db.gz`
   con su `.sha256`.
-- **Healthchecks.io:** en el proyecto, el check `agentoffice-production` debe estar en verde (*up*) y mostrar un ping
+- **Healthchecks.io:** en el proyecto, el check `agentoffice` debe estar en verde (*up*) y mostrar un ping
   reciente.
 - **Verificación completa en cualquier momento** (no cambia nada):
 
@@ -451,7 +458,7 @@ Cada error del instalador termina con una línea `HINT:` que indica la solución
 | `no compatible Python after provisioning` / `python.interpreter is not usable` | Python < 3.12 o sin `venv`/SQLite adecuados. | Deja `python.interpreter` vacío para que el instalador provisione uno; en Debian 12 lo hace con `uv`. |
 | `the Healthchecks.io project has no integrations: an alert would reach nobody` | No hay destinatarios en el proyecto. | Añade y verifica uno (D.3–D.4) y repite. |
 | `Healthchecks.io rejected the API key (HTTP 401)` (o 403) | Clave errónea, revocada o *read-only*. | Crea una API key normal (D.5). No se reintenta para no bloquear tu cuenta. |
-| `a check named 'agentoffice-production' exists but was not created by this bootstrap` | Ya creaste uno a mano. | Bórralo, cambia `check_name` o pon `adopt_existing = true`. |
+| `a check named 'agentoffice' exists but was not created by this bootstrap` | Ya creaste uno a mano. | Bórralo, cambia `check_name` o pon `adopt_existing = true`. |
 | `agent-office.service is not healthy` / `install.sh failed` | El servicio no arranca. | `sudo journalctl -u agent-office -n 50`; ver [TROUBLESHOOTING.md](TROUBLESHOOTING.md). |
 | Instalación interrumpida (corte de luz, Ctrl+C, error de red) | — | Ejecuta el mismo comando otra vez: el estado está en `/etc/agent-office/bootstrap-state.json` y continúa sin repetir lo hecho. |
 | Reinstalar sobre un sistema existente | — | Es seguro: conserva la base de datos, los tokens, la identidad de Tailscale y el check. Si el puerto configurado no coincide con el instalado, se detiene sin tocar nada. |
@@ -483,7 +490,8 @@ Ctrl+C no lo para**. Tailscale (la VPN y la interfaz `tailscale0`) también es u
 Al terminar, `stop.sh` comprueba que no quede nada: ningún servicio de AgentOffice activo, ningún proceso del usuario
 `agent-office`, el puerto libre y, con `--tailscale`, ni `tailscaled` ni la interfaz `tailscale0`. Si algo sigue en
 marcha, lo dice y termina con error. Los datos, la configuración y el registro del equipo en la tailnet se conservan:
-`start.sh` vuelve a conectar Tailscale solo, sin auth key, con la misma URL.
+`start.sh` vuelve a conectar Tailscale solo, sin auth key, con la misma URL, y al terminar muestra esa URL y el token
+de administrador.
 
 > **Cuidado si entras por SSH a través de Tailscale** (una IP `100.x.y.z`): al parar Tailscale se corta tu sesión.
 > `stop.sh --tailscale` lo detecta y se niega. Usa la red local o la consola, o añade `--force` si lo sabes.

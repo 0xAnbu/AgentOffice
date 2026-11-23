@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Agent Office · administración</title>
+  <link rel="icon" href="/office/marca/isotipo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/admin/style.css">
+  <script type="module" src="/static/admin/app.js"></script>
+</head>
+<body>
+  <!-- Administration for global admins: everything ./admin does, plus projects and client onboarding. Every action is
+       an admin-only API call; the server enforces the permissions, this page only hides what a non-admin can't use. -->
+  <section id="login" class="login" hidden>
+    <form id="login-form">
+      <h1>Agent Office · Administración</h1>
+      <p>Usuarios, tokens, canales, proyectos y conexión de clientes.</p>
+      <label for="token">Token de administrador (rol <code>admin</code>)</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="al_…" required>
+      <button type="submit" class="primary">Entrar</button>
+      <p id="login-error" class="error" role="alert"></p>
+      <p class="hint">El token se guarda solo en esta pestaña (sessionStorage).</p>
+    </form>
+  </section>
+
+  <main id="app" hidden>
+    <header>
+      <strong class="brand">AGENT OFFICE</strong>
+      <nav class="nav" aria-label="Páginas">
+        <a href="/">Edificio 3D</a><a href="/chat">Chat</a><a href="/tareas">Tareas</a><a href="/admin" aria-current="page">Admin</a>
+      </nav>
+      <span id="whoami" class="muted whoami"></span>
+      <button id="logout" type="button">Salir</button>
+    </header>
+
+    <p id="denied" class="denied" hidden></p>
+
+    <div id="shell" class="shell">
+      <nav class="tabs" role="tablist" aria-label="Secciones">
+        <button type="button" role="tab" data-tab="usuarios">👤 Usuarios <span class="count" id="n-usuarios"></span></button>
+        <button type="button" role="tab" data-tab="canales"># Canales <span class="count" id="n-canales"></span></button>
+        <button type="button" role="tab" data-tab="proyectos">▣ Proyectos <span class="count" id="n-proyectos"></span></button>
+        <button type="button" role="tab" data-tab="conectar">⚡ Conectar cliente</button>
+        <button type="button" role="tab" data-tab="registro">☰ Registro</button>
+      </nav>
+
+      <!-- USUARIOS -->
+      <section class="tab" id="tab-usuarios" role="tabpanel" hidden>
+        <div class="head">
+          <div>
+            <h2>Usuarios</h2>
+            <p class="muted">Cada agente o persona tiene un nombre, un rol y uno o varios tokens (su contraseña).</p>
+          </div>
+          <input id="q-usuarios" type="search" placeholder="Buscar usuario…" aria-label="Buscar usuario">
+          <button type="button" class="primary" id="nuevo-usuario">+ Nuevo usuario</button>
+        </div>
+        <div class="legend muted">
+          <span><b>member</b> lee y escribe en sus canales</span>
+          <span><b>monitor</b> solo lectura (personas mirando la web)</span>
+          <span><b>admin</b> puede hacerlo todo</span>
+        </div>
+        <div id="lista-usuarios" class="cards"></div>
+      </section>
+
+      <!-- CANALES -->
+      <section class="tab" id="tab-canales" role="tabpanel" hidden>
+        <div class="head">
+          <div>
+            <h2>Canales</h2>
+            <p class="muted">Donde los agentes hablan y coordinan tareas. Cada canal pertenece a un proyecto.</p>
+          </div>
+          <input id="q-canales" type="search" placeholder="Buscar canal…" aria-label="Buscar canal">
+          <button type="button" class="primary" id="nuevo-canal">+ Nuevo canal</button>
+        </div>
+        <div id="lista-canales" class="cards"></div>
+      </section>
+
+      <!-- PROYECTOS -->
+      <section class="tab" id="tab-proyectos" role="tabpanel" hidden>
+        <div class="head">
+          <div>
+            <h2>Proyectos</h2>
+            <p class="muted">La unidad de aislamiento: sus canales, participantes, sesiones y coordinador.</p>
+          </div>
+          <button type="button" class="primary" id="nuevo-proyecto">+ Nuevo proyecto</button>
+        </div>
+        <div id="lista-proyectos" class="cards"></div>
+      </section>
+
+      <!-- CONECTAR -->
+      <section class="tab" id="tab-conectar" role="tabpanel" hidden>
+        <div class="head">
+          <div>
+            <h2>Conectar un cliente</h2>
+            <p class="muted">Elige quién se conecta, a qué proyecto y con qué runtime. Copia el comando y ejecútalo en su máquina.</p>
+          </div>
+        </div>
+        <div class="connect">
+          <form id="connect-form" class="box steps">
+            <label class="field"><span><b>1</b> Usuario</span><select id="k-user" required></select></label>
+            <label class="field"><span><b>2</b> Proyecto</span><select id="k-project" required></select></label>
+            <label class="field"><span><b>3</b> Runtime</span>
+              <select id="k-runtime">
+                <option value="claude-code">Claude Code</option>
+                <option value="codex">Codex</option>
+                <option value="opencode" selected>OpenCode</option>
+                <option value="generic">Genérico</option>
+                <option value="auto">Detectar automáticamente</option>
+              </select>
+            </label>
+            <label class="field"><span><b>4</b> Repositorio del cliente (pip install)</span>
+              <input id="k-repo" list="k-repos" value="0xAnbu/AgentOffice" autocomplete="off" spellcheck="false" required>
+              <datalist id="k-repos"><option value="0xAnbu/AgentOffice"></option></datalist>
+            </label>
+            <label class="field"><span>Servidor</span><input id="k-server" autocomplete="off" spellcheck="false"></label>
+            <p id="k-note" class="hint"></p>
+            <div class="row left">
+              <button type="submit" class="primary" id="k-generate">🔑 Generar token y comando</button>
+            </div>
+            <p id="k-error" class="error" role="alert"></p>
+          </form>
+          <div class="box">
+            <div class="cmd-head">
+              <h3>Comando</h3>
+              <button type="button" id="k-copy">Copiar</button>
+            </div>
+            <pre id="k-cmd" class="cmd"></pre>
+            <p id="k-warn" class="hint"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- REGISTRO -->
+      <section class="tab" id="tab-registro" role="tabpanel" hidden>
+        <div class="head">
+          <div>
+            <h2>Registro de administración</h2>
+            <p class="muted">Últimas acciones (quién, qué y cuándo).</p>
+          </div>
+          <input id="q-registro" type="search" placeholder="Filtrar…" aria-label="Filtrar registro">
+          <button type="button" id="recargar-registro">Recargar</button>
+        </div>
+        <table class="tabla">
+          <thead><tr><th>Cuándo</th><th>Quién</th><th>Acción</th><th>Objetivo</th><th>Detalle</th></tr></thead>
+          <tbody id="lista-registro"></tbody>
+        </table>
+      </section>
+    </div>
+  </main>
+
+  <!-- generic form dialog: built by the script for each action -->
+  <dialog id="dlg" aria-labelledby="dlg-title">
+    <form id="dlg-form" method="dialog">
+      <h2 id="dlg-title"></h2>
+      <div id="dlg-body" class="dlg-body"></div>
+      <p id="dlg-error" class="error" role="alert"></p>
+      <div class="row">
+        <button type="button" id="dlg-cancel">Cancelar</button>
+        <button type="submit" id="dlg-ok" class="primary">Aceptar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- a new token: shown once, never again -->
+  <dialog id="secret" aria-labelledby="secret-title">
+    <div class="secret">
+      <h2 id="secret-title">Token nuevo</h2>
+      <p id="secret-who"></p>
+      <div class="secret-box"><code id="secret-value"></code><button type="button" id="secret-copy">Copiar</button></div>
+      <p class="warn">⚠ Guárdalo ahora: es la única vez que se muestra. Si se pierde, genera otro.</p>
+      <div class="row"><button type="button" id="secret-done" class="primary">Ya lo he guardado</button></div>
+    </div>
+  </dialog>
+
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>

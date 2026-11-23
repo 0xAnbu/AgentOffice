@@ -286,7 +286,11 @@ def test_bootstrap_end_to_end(box: Sandbox) -> None:
     texts.update({str(f): f.read_text(errors="replace") for f in files if f.is_file()})
     for where, text in texts.items():
         for name, value in secrets.items():
+            # the admin token is shown on purpose in the access summary on stdout (even outputs), never elsewhere
+            if name == "admin token" and where.startswith("output ") and int(where.split()[1]) % 2 == 0:
+                continue
             assert value not in text, f"{name} leaked in {where}"
+    assert admin in r1.stdout and "/admin" in r1.stdout  # deploy.sh ends with the URL and the admin token
     assert HC_KEY not in sb.env_file.read_text()
     assert TS_KEY not in sb.env_file.read_text()
     assert GH_TOKEN not in sb.env_file.read_text()
