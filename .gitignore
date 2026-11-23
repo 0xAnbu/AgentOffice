@@ -19,3 +19,7 @@ build/
 dist/
 .ssh
 
+
+# automated deployment: local configuration and secrets are never committed
+/deployment.toml
+deployment/bootstrap-secrets.json

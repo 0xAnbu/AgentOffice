@@ -98,6 +98,31 @@ The pill shows *reconectando*. The page reconnects with backoff and replays reta
   `401` in GitHub's delivery log means the secret differs. A backend that won't start with
   `GITHUB_WEBHOOK_SECRET is empty` has `AGENTLINK_WEBHOOK_PORT` set without the secret.
 
+## Automated deployment fails
+
+Every bootstrap error ends with a `HINT:` line. The full log is `/var/log/agent-office/bootstrap.log`, the last
+report `/etc/agent-office/bootstrap-report.txt`, and per-stage state `/etc/agent-office/bootstrap-state.json`.
+Re-running the same command resumes; completed stages are re-checked, not redone. The guide has a table of common
+messages in plain language ([DEPLOYMENT_SETUP_GUIDE.md §J](DEPLOYMENT_SETUP_GUIDE.md#j-problemas-frecuentes)). The
+ones that need a decision rather than a retry:
+
+- `belongs to tailnet …, not the configured …` / `Tailscale is logged in but stopped`: the bootstrap never moves or
+  restarts an existing Tailscale identity. Fix `network.tailnet`, or log out or up by hand.
+- `Tailscale Serve conflict … not overwritten`: another mapping uses `https_port`. Pick another port or remove it.
+- `a check named … exists but was not created by this bootstrap`: delete it, rename `check_name` or set
+  `adopt_existing = true`.
+- `AgentOffice is installed on port X but the configuration says Y`: align `application.port`; it never reinstalls
+  over a different port.
+- Report `INCOMPLETE`: a mandatory row is `NOT_VERIFIED` (e.g. Healthchecks.io unreachable, no Tailscale IP yet).
+  Run `sudo deployment/verify-live.sh` again once the cause is gone.
+
+## Reachability from other devices
+
+All checks run on the server itself (TLS to its own Tailscale IP with the real name and certificate). A `SUCCESS`
+report does **not** prove that every participant can reach it: their ACL grants, client or DNS may differ. There is no
+automated check from a second device. Test once from a participant laptop: `tailscale status`, then
+`curl -fsS https://<host>.<tailnet>.ts.net/api/health` (no `-k`). From outside the tailnet the URL must not answer.
+
 ## Restoring data
 
 `deployment/restore.sh <backup.db.gz>` (verifies first, keeps the replaced database in

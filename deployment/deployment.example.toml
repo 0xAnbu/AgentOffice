@@ -1,0 +1,49 @@
+# AgentOffice deployment configuration (example). Copy it and edit:
+#   cp deployment/deployment.example.toml deployment.toml
+# Read by deployment/bootstrap.sh as data (TOML, never executed). Unknown sections or keys are rejected, so a typo
+# fails loudly instead of being ignored. No secrets here: they go in deployment/bootstrap-secrets.json (mode 0600).
+# Step-by-step explanation of every value: docs/DEPLOYMENT_SETUP_GUIDE.md §E.
+
+[deployment]
+mode = "production"            # "production" (Tailscale + Healthchecks.io required) or "development" (local only)
+hostname = "agentoffice"       # device name in the tailnet -> https://agentoffice.<your-tailnet>.ts.net
+
+[application]
+bind_host = "127.0.0.1"        # fixed: the backend only listens on loopback
+port = 8080                    # loopback port behind Tailscale Serve
+git_ref = "HEAD"               # commit/tag of this checkout to install the first time (updates: update.sh)
+
+[python]
+version = "3.12"               # managed CPython to provision when the system has none >= 3.12 (Debian 12)
+interpreter = ""               # absolute path to force a specific interpreter; empty = detect / provision
+
+[network]
+provider = "tailscale"
+tag = "tag:agentoffice-server" # must be in tagOwners of your tailnet policy and in the auth key
+tailnet = ""                   # optional safety check, e.g. "example.com" or "tail1234.ts.net"
+https = true                   # fixed: private HTTPS with a Let's Encrypt certificate managed by Tailscale
+https_port = 443
+public_access = false          # fixed: AgentOffice is never published to the Internet
+
+[monitoring]
+provider = "healthchecks"
+api_url = "https://healthchecks.io"
+interval_seconds = 300         # >= 300: the local health check timer runs every 5 minutes
+grace_seconds = 600
+check_name = "agentoffice-production"
+tags = "agentoffice"
+channels = "*"                 # "*" = every integration of the project, or comma-separated integration names
+adopt_existing = false         # true = manage an existing check with this name that the bootstrap did not create
+
+[backup]
+local_enabled = true           # fixed: daily local backup at 03:30, 14 kept (external copies are not automated)
+
+[github_webhook]
+enabled = false                # true = publish ONLY the webhook endpoint (port below) with Tailscale Funnel
+port = 8081                    # loopback listener that answers only POST /api/github/webhook
+funnel_port = 8443             # 443, 8443 or 10000, and different from network.https_port
+
+# One block per repository whose events should reach a channel (channel defaults to the repository name):
+# [[github_webhook.repositories]]
+# repo = "your-org/your-repo"
+# channel = "your-repo"

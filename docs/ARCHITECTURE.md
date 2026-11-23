@@ -33,7 +33,7 @@ A participant agent claims a task and reports progress through a local client or
 | Adapters (`agentlink/adapters.py`) | each laptop | Install/uninstall the runtime integration reversibly; declare an honest capability matrix | Bypass a runtime's trust/approval prompts |
 | 3D office (`static/office/`) | browser | Visualise sessions as the original oficina-virtual characters on floors, animate real events | Write coordination state; simulate in production |
 | Chat (`static/chat/`) | browser | Conversations, threads, search, deliveries, tasks, leases, coordinator, recovery history | Duplicate business logic |
-| `deployment/` | server | systemd unit, install/update/rollback, backup/restore, health check timer | Run a second coordination server |
+| `deployment/` | server | systemd unit, install/update/rollback, backup/restore, health check timer; `bootstrap.sh`/`deploy.sh` → `provision.py` (unattended provisioning and verification) | Run a second coordination server; publish the API; store external API keys |
 
 ## Implementation map
 
@@ -121,6 +121,17 @@ else the fallback). On each floor, each owner gets a room; each session gets a d
 - Backups use the SQLite online backup API (consistent under WAL, verified with `integrity_check`).
 - Logs: journald (`journalctl -u agent-office`). Health: `/api/health` (process) and `/api/health?deep=1`
   (SQLite read/write + reconciler heartbeat; 503 otherwise).
+- **Bootstrap** (`deployment/bootstrap.sh`, `deploy.sh`, `preflight.sh`, `verify-live.sh` are thin shell entry
+  points to `deployment/provision.py`, standard library only, Python ≥ 3.11 so it runs before 3.12 is provisioned).
+  It drives the existing scripts rather than replacing them: `install.sh` installs, `provision-python.sh`,
+  `provision-tailscale.sh` and `provision-monitor.sh` run single stages. The stages are resumable from
+  `/etc/agent-office/bootstrap-state.json`, and each is check-then-act, so a re-run only does what is missing.
+  Declarative input is `deployment.toml`, with secrets kept apart. See [DEPLOYMENT.md](DEPLOYMENT.md#automated-deployment).
+- **External dependencies at deploy time:** the distribution's apt mirrors; `pkgs.tailscale.com` (signed apt
+  repository); GitHub releases for `uv` (checksum verified), only when no Python ≥ 3.12 exists; the Tailscale
+  control plane (`tailscale up`, certificates via Let's Encrypt); the Healthchecks.io Management API v3; and the
+  GitHub REST API only with the optional webhook. At run time only Tailscale and the Healthchecks.io ping URL are
+  used. Nothing on the server listens publicly except the optional webhook-only Funnel listener.
 - Inherited from AgentLink and **not** part of the supported Agent Office deployment: the Postgres/serverless mode
   (not verified with schema v2) and the Vercel deployment (removed). The correctness of claims, fencing, elections,
   dependency checks, path leases, delivery states and cursors relies on SQLite's single serialised writer
