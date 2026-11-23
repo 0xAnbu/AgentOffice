@@ -6,7 +6,7 @@ Runs on 2026-11-23, Linux x86_64 (Kali Rolling), Python 3.14.8, systemd 262. The
 
 - [`automated-deployment-tests-20261123.log`](automated-deployment-tests-20261123.log): every deploy test with its
   result, the end-to-end run and the whole-suite summary.
-- [`deployment-verify-20261123T114215Z.log`](deployment-verify-20261123T114215Z.log): `deployment/verify.sh`, 20/20,
+- [`deployment-verify-20261123T132115Z.log`](deployment-verify-20261123T132115Z.log): `deployment/verify.sh`, 22/22 (stop.sh/start.sh included),
   re-run after the `install.sh`/`lib.sh` changes (regression check of the existing deployment).
 
 Nothing below was executed against the real Tailscale, Healthchecks.io or GitHub services, nor on a Raspberry Pi.
@@ -17,11 +17,11 @@ Those levels are listed as **NOT_VERIFIED**, not as passed.
 | Level | What | Result |
 |---|---|---|
 | 1. Unit | `tests/test_deploy_unit.py` | 119 passed |
-| 2. Simulated services | `tests/test_deploy_integration.py` (fake `tailscale` with real TLS through a test CA, fake Healthchecks.io v3, fake GitHub, fake apt, uv checksum, non-apt / no Tailscale repository / non-glibc, Tailscale install prompt and script) | 60 passed |
+| 2. Simulated services | `tests/test_deploy_integration.py` (fake `tailscale` with real TLS through a test CA, fake Healthchecks.io v3, fake GitHub, fake apt, uv checksum, non-apt / no Tailscale repository / non-glibc, Tailscale install prompt and script, stop.sh options and SSH guard) | 62 passed |
 | 3. Local integration | `AO_DEPLOY_E2E=1 tests/test_deploy_e2e.py`: real `install.sh`, real units under `systemd --user`, fakes for external services | 1 passed (~10 s) |
 | — | Contract `tests/test_webhook_ingress.py` (no doc or script puts the API on Funnel) | passed, docs included |
-| — | Whole suite | 346 passed, 2 skipped (node not installed; e2e without opt-in) |
-| — | `deployment/verify.sh` | 20/20 |
+| — | Whole suite | 348 passed, 2 skipped (node not installed; e2e without opt-in) |
+| — | `deployment/verify.sh` | 22/22 |
 | — | `ruff check`, `ruff format --check` (repo incl. `deployment/`), `mypy`, `mypy --python-version 3.11 deployment/provision.py` | clean |
 | 4. Real Tailscale / Healthchecks.io / GitHub | — | **NOT_VERIFIED** |
 | 5. Real Raspberry Pi (and reboot) | — | **NOT_VERIFIED** |
@@ -51,6 +51,7 @@ unchanged and still `0600`, and the env file holds no external API key.
 | GitHub webhook created through the real API, delivery through Funnel | Only with `github_webhook.enabled` |
 | Debian 12 path with uv-managed CPython on real Debian 12; Ubuntu 24.04; Raspberry Pi OS 64-bit on aarch64 | Run the guide on each |
 | Untested distributions (non-apt, derivatives, musl) beyond the precheck and stage logic | Only unit/simulated coverage |
+| `stop.sh --tailscale` / `start.sh` with the real `tailscaled` (as root) | Only option parsing and the SSH guard are tested; user-mode verify.sh covers the backend part |
 | The real `https://tailscale.com/install.sh` run by the bootstrap | Only a local script is piped to `sh` in tests; Tailscale is already installed on the dev machine |
 | Reboot: service, timers and Tailscale Serve come back | `sudo reboot`, then `verify-live.sh` |
 | Reachability from a participant device; no access from outside the tailnet | Manual (guide §L); **excluded** from automation by scope |
@@ -199,7 +200,7 @@ phase:
   status: PASS
 deliverables: ["tests/test_deploy_unit.py", "tests/test_deploy_integration.py", "tests/test_deploy_e2e.py", "tests/deploy_fakes.py", ".github/workflows/ci.yml", "this file"]
 verification:
-  passed: ["346 passed, 2 skipped", "e2e 1 passed", "verify.sh 20/20", "ruff, mypy (3.14 and 3.11 target) clean"]
+  passed: ["348 passed, 2 skipped", "e2e 1 passed", "verify.sh 22/22", "ruff, mypy (3.14 and 3.11 target) clean"]
   failed: []
   not_verified: ["level 4 (real external services)", "level 5 (real Raspberry Pi)", "the new CI job until the PR runs it"]
 regressions: {detected: 0, unresolved: 0}

@@ -266,7 +266,7 @@ unhealthy, update, manual rollback and automatic rollback of a broken release.
 ### Raspberry Pi acceptance checklist (pending — needs the hardware)
 
 - [ ] `install.sh` on Raspberry Pi OS 64-bit; record `uname -a`, `python3 --version`, `sqlite3 --version`.
-- [ ] `deployment/verify.sh` on the Pi (20/20).
+- [ ] `deployment/verify.sh` on the Pi (22/22).
 - [ ] Reboot the Pi → service and timers come back; data persists.
 - [ ] Tailscale Serve: HTTPS from two participant laptops; `curl` from outside the tailnet fails.
 - [ ] Webhook Funnel: GitHub `ping` delivered; from outside the tailnet `:8443/api/health` → 404 and `:443` unreachable.

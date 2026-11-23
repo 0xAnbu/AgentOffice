@@ -1,4 +1,4 @@
-# 2026-11-23T13:05:30Z base commit e0da365 + Tailscale install prompt (working tree); Linux x86_64; Python 3.14.8; systemd 262
+# 2026-11-23T13:23:00Z commit 8ac2069; Linux x86_64; Python 3.14.8; systemd 262
 $ .venv/bin/pytest -o addopts="" -v -p no:warnings tests/test_deploy_unit.py tests/test_deploy_integration.py tests/test_webhook_ingress.py
 ============================= test session starts ==============================
 platform linux -- Python 3.14.8, pytest-9.2.0, pluggy-1.7.0 -- /home/kali/Claude/AgentOffice/work/agentics/.venv/bin/python3
@@ -6,7 +6,7 @@ cachedir: .pytest_cache
 rootdir: /home/kali/Claude/AgentOffice/work/AgentOffice
 configfile: pyproject.toml
 plugins: anyio-4.16.0
-collecting ... collected 201 items
+collecting ... collected 203 items
 
 tests/test_deploy_unit.py::test_example_config_is_valid_and_matches_the_defaults PASSED
 tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[deploymnet]\nmode='production'-unknown section [deploymnet]] PASSED
@@ -184,6 +184,8 @@ tests/test_deploy_integration.py::test_missing_config_is_a_clear_error PASSED
 tests/test_deploy_integration.py::test_invalid_config_lists_the_errors PASSED
 tests/test_deploy_integration.py::test_insecure_secrets_file_is_refused_and_kept PASSED
 tests/test_deploy_integration.py::test_apply_without_root_is_a_permission_error PASSED
+tests/test_deploy_integration.py::test_stop_and_start_help_and_bad_options PASSED
+tests/test_deploy_integration.py::test_stop_tailscale_refuses_to_cut_an_ssh_session_through_the_tailnet PASSED
 tests/test_deploy_integration.py::test_secrets_are_never_accepted_as_arguments PASSED
 tests/test_deploy_integration.py::test_interrupt_returns_130 PASSED
 tests/test_deploy_integration.py::test_no_set_x_and_no_secret_flags_in_the_entry_points PASSED
@@ -210,7 +212,7 @@ tests/test_webhook_ingress.py::test_deployment_publishes_only_the_webhook_port P
 tests/test_webhook_ingress.py::test_contract_parser_catches_a_funnelled_api PASSED
 tests/test_webhook_ingress.py::test_service_keeps_the_api_on_loopback PASSED
 
-============================= 201 passed in 25.30s =============================
+============================= 203 passed in 24.57s =============================
 
 $ AO_DEPLOY_E2E=1 .venv/bin/pytest -o addopts="" -v -p no:warnings tests/test_deploy_e2e.py
 ============================= test session starts ==============================
@@ -223,10 +225,10 @@ collecting ... collected 1 item
 
 tests/test_deploy_e2e.py::test_bootstrap_end_to_end PASSED
 
-============================== 1 passed in 10.04s ==============================
+============================== 1 passed in 10.17s ==============================
 
-$ .venv/bin/pytest -o addopts="" -q -p no:warnings   # whole suite
+$ .venv/bin/pytest -o addopts="" -q -p no:warnings -rf   # whole suite
 =========================== short test summary info ============================
 SKIPPED [1] tests/test_cross_platform.py:126: node not installed
 SKIPPED [1] tests/test_deploy_e2e.py:206: set AO_DEPLOY_E2E=1 (slow end-to-end)
-1 failed, 345 passed, 2 skipped in 46.99s
+348 passed, 2 skipped in 47.19s

@@ -232,7 +232,7 @@ verification:
   failed: 0
   skipped: 0
   evidence:
-    - "docs/evidence/deployment-verify-*.log: 20/20 on Linux x86_64 under systemd --user (NOT a Raspberry Pi)"
+    - "docs/evidence/deployment-verify-*.log: 22/22 (latest) on Linux x86_64 under systemd --user (NOT a Raspberry Pi)"
     - "Start, auth, loopback-only binding, persistence, restart after SIGKILL, backup under writes, restore, restore safety, heartbeat only when healthy, timers, update, rollback, broken-release rollback"
 regressions: {detected: 0, unresolved: 0}
 limitations:
@@ -288,12 +288,12 @@ verification:
     - "pytest (whole suite)"
     - "AO_DEPLOY_E2E=1 pytest tests/test_deploy_e2e.py"
     - "bash deployment/verify.sh"
-  passed: 346
+  passed: 348
   failed: 0
   skipped: 2
   evidence:
     - "docs/evidence/automated-deployment-validation.md (levels 1-3 passed, 4-5 NOT_VERIFIED, per-phase contracts)"
-    - "docs/evidence/automated-deployment-tests-20261123.log; docs/evidence/deployment-verify-20261123T114215Z.log (20/20)"
+    - "docs/evidence/automated-deployment-tests-20261123.log; docs/evidence/deployment-verify-20261123T132115Z.log (22/22)"
 regressions: {detected: 0, unresolved: 0}
 limitations:
   - "No reachability check from a second device and no off-machine backups (excluded by scope)"
