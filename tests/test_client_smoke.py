@@ -74,7 +74,9 @@ def test_client_lifecycle_on_this_os(server: str, tmp_path: Path) -> None:
     repo = tmp_path / "my repo ñ"
     repo.mkdir()
     env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTLINK_")}
-    env.update(AGENTLINK_HOME=str(home), PYTHONIOENCODING="utf-8")
+    user_home = tmp_path / "user home ñ"  # `disconnect` removes the supervisor service under the user's home:
+    user_home.mkdir()  # never let it reach the real one of whoever runs the suite
+    env.update(AGENTLINK_HOME=str(home), HOME=str(user_home), USERPROFILE=str(user_home), PYTHONIOENCODING="utf-8")
     if os.name != "nt":  # the installed command itself lives under a path with spaces and non-ASCII characters
         bindir = tmp_path / "bin dir ñ"
         bindir.mkdir()
