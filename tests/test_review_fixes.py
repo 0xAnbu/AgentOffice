@@ -180,10 +180,12 @@ def test_body_limit_enforced_while_streaming(world: World) -> None:
     )
     assert r.status_code == 413
     huge = (b"x" * 1_048_576 for _ in range(6))  # 6 MiB to the anonymous webhook: rejected before the HMAC check
-    r = world.c.post(
-        "/api/github/webhook", content=huge, headers={"x-github-event": "push", "content-type": "application/json"}
-    )
+    forged = {"x-github-event": "push", "content-type": "application/json", "x-hub-signature-256": "sha256=" + "0" * 64}
+    r = world.c.post("/api/github/webhook", content=huge, headers=forged)
     assert r.status_code == 413
+    unsigned = (b"x" * 1_048_576 for _ in range(6))  # without a signature header it is refused before any read
+    r = world.c.post("/api/github/webhook", content=unsigned, headers={"x-github-event": "push"})
+    assert r.status_code == 401
     declared = world.c.post(
         "/api/channels/dev/messages", content=b"{}", headers={**world.h("alice"), "content-length": str(10**9)}
     )

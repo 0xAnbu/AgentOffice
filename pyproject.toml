@@ -49,7 +49,7 @@ max-line-length = 140
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106", "S107", "S311", "E501", "SIM117", "SIM105", "RUF059"]
-"tests/{test_client_smoke,test_cross_platform}.py" = ["S105", "S106", "S310", "S314", "S603", "S607", "E501", "SIM105"]
+"tests/{test_client_smoke,test_cross_platform,test_webhook_ingress}.py" = ["S105", "S106", "S310", "S314", "S603", "S607", "E501", "SIM105"]
 # client side: launches runtimes/services with fixed argv lists; best-effort calls deliberately swallow errors
 "agentlink/{adapters,clientcli,hooks,supervisor,local,oscmd}.py" = ["S603", "S607", "SIM105", "RUF012", "E501"]
 "scripts/*" = ["S106", "S311", "S603", "S607", "E501"]

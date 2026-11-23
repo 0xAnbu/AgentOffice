@@ -68,6 +68,52 @@ class SecurityHeaders:
         await self.app(scope, receive, wrapped)
 
 
+WEBHOOK_PATH = "/api/github/webhook"
+
+
+class WebhookIngress:
+    """Fail-closed guard for the public webhook listener (pure ASGI, outermost).
+
+    GitHub cannot reach the tailnet, so `deployment/` publishes a *second* loopback listener (AGENTLINK_WEBHOOK_PORT)
+    through Tailscale Funnel. Whatever reaches that port, from anyone on the Internet, may only ever be
+    `POST /api/github/webhook` (HMAC-verified downstream); every other path, method and every WebSocket is refused
+    here, before routing, so the API, MCP, dashboards and WebSockets stay reachable only through the private listener.
+    """
+
+    def __init__(self, app: ASGIApp, port: int | None) -> None:
+        self.app = app
+        self.port = port
+
+    def _public(self, scope: Scope) -> bool:
+        server = scope.get("server")
+        return self.port is not None and server is not None and server[1] == self.port
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "lifespan" or not self._public(scope):
+            await self.app(scope, receive, send)
+            return
+        if scope["type"] == "http" and scope["method"] == "POST" and scope["path"] == WEBHOOK_PATH:
+            await self.app(scope, receive, send)
+            return
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        body = b'{"error":{"code":"not_found","message":"only the GitHub webhook is served on this listener"}}'
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 404,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+
+def webhook_port_from_env() -> int | None:
+    raw = os.environ.get("AGENTLINK_WEBHOOK_PORT", "").strip()
+    return int(raw) if raw else None
+
+
 async def index(_: Request) -> Response:
     """The 3D building (visualization plane). Data comes only from the API; it never simulates activity."""
     return FileResponse(STATIC / "office" / "index.html")
@@ -119,7 +165,8 @@ async def lifespan(_: Starlette) -> AsyncIterator[None]:
             await task
 
 
-def create_app() -> Starlette:
+def create_app(webhook_port: int | None = None) -> Starlette:
+    """`webhook_port`: the public webhook-only listener (see WebhookIngress); default AGENTLINK_WEBHOOK_PORT."""
     app = Starlette(
         lifespan=lifespan,
         routes=[
@@ -135,6 +182,7 @@ def create_app() -> Starlette:
         exception_handlers={AppError: app_error, Exception: internal_error},
     )
     app.add_middleware(SecurityHeaders)
+    app.add_middleware(WebhookIngress, port=webhook_port if webhook_port is not None else webhook_port_from_env())
     return app
 
 

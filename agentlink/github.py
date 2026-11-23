@@ -16,11 +16,14 @@ from .security import Principal, now_ms
 GITHUB_AGENT = "github"
 
 
-def verify_signature(secret: str, body: bytes, header: str | None) -> None:
+def verify_signature(secret: str, body: bytes, header: str | None, *, header_only: bool = False) -> None:
+    """`header_only`: the cheap pre-check (secret configured, header well-formed) done before reading the body."""
     if not secret:
         raise Unavailable("GITHUB_WEBHOOK_SECRET is not configured")
-    if not header or not header.startswith("sha256="):
+    if not header or not header.startswith("sha256=") or len(header) != len("sha256=") + 64:
         raise Unauthorized("missing signature")
+    if header_only:
+        return
     expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, header):
         raise Unauthorized("bad signature")

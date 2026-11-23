@@ -80,11 +80,43 @@ tailscale serve status                              # → https://<pi-name>.<tai
 ```
 
 - Enable **MagicDNS** and **HTTPS certificates** in the Tailscale admin console (DNS page) first.
-- Do **not** use `tailscale funnel` (that would publish to the Internet).
+- Do **not** put port 443 / `127.0.0.1:8080` on `tailscale funnel`: that would publish the whole API to the Internet.
+  The only thing that may go on Funnel is the webhook-only listener (next section).
 - Onboarding each participant: invite them to the tailnet (or share the machine), they install Tailscale and log in;
   then `https://<pi-name>.<tailnet>.ts.net` works from their laptops. Use ACLs to limit access to that machine.
 - The backend still requires a token on every API call; Tailscale is an additional layer, not the authentication.
 - The backend listens on `127.0.0.1` only; `verify.sh` checks there is no other listener.
+
+## GitHub webhook (Tailscale Funnel, webhook-only listener)
+
+GitHub's servers are not in the tailnet, so a webhook pointed at `https://<pi-name>.<tailnet>.ts.net` (Serve) can
+never be delivered. Publishing the API with Funnel would fix that by exposing everything, so instead the backend
+opens a **second loopback listener that serves nothing but `POST /api/github/webhook`**, and only that one goes on
+Funnel:
+
+```bash
+# /etc/agent-office/agent-office.env
+GITHUB_WEBHOOK_SECRET=<long random string>        # e.g. python3 -c 'import secrets; print(secrets.token_hex(32))'
+AGENTLINK_WEBHOOK_PORT=8081
+```
+
+```bash
+sudo systemctl restart agent-office
+sudo tailscale funnel --bg --https=8443 http://127.0.0.1:8081
+tailscale funnel status                             # → https://<pi-name>.<tailnet>.ts.net:8443 (Funnel on)
+```
+
+In the GitHub repository: **Settings → Webhooks → Add webhook**, payload URL
+`https://<pi-name>.<tailnet>.ts.net:8443/api/github/webhook`, content type `application/json`, the same secret.
+Then link a channel to the repo (`--repo owner/repo`); the `ping` delivery should show a green tick.
+
+- Funnel needs the `funnel` node attribute in the tailnet policy (the CLI prints the link to enable it) and only
+  accepts ports 443, 8443 and 10000. Port 443 stays on Serve (tailnet only); the webhook uses 8443.
+- On port 8081 every other path, method and WebSocket gets `404` / is closed **before routing**, even with a valid
+  token; deliveries must carry a valid `X-Hub-Signature-256`. Both are covered by `tests/test_webhook_ingress.py`.
+- The backend refuses to start if `AGENTLINK_WEBHOOK_PORT` is set without `GITHUB_WEBHOOK_SECRET`, or equals the
+  API port. Without `AGENTLINK_WEBHOOK_PORT` nothing extra listens and nothing is on Funnel.
+- To turn it off: `sudo tailscale funnel --https=8443 off`, then remove `AGENTLINK_WEBHOOK_PORT`.
 
 ## Tokens
 
@@ -147,7 +179,8 @@ are kept.
 2. `sudo systemctl stop agent-office` on the new one.
 3. On the old one: `backup.sh` and copy the `.db.gz` + `.sha256` and `/etc/agent-office/agent-office.env`.
 4. On the new one: put the old env file in place (same tokens) and `restore.sh <file> --yes`.
-5. Move the Tailscale Serve config (`tailscale serve --bg --https=443 http://127.0.0.1:8080`) and, if the
+5. Move the Tailscale Serve config (`tailscale serve --bg --https=443 http://127.0.0.1:8080`), the webhook Funnel if
+   used (`tailscale funnel --bg --https=8443 http://127.0.0.1:8081`, then update the GitHub payload URL) and, if the
    hostname changes, run `agentlink connect --server https://<new>…` on each laptop (tokens stay valid).
 6. Point `HC_PING_URL` at the same check; stop the old service.
 
@@ -166,5 +199,6 @@ unhealthy, update, manual rollback and automatic rollback of a broken release.
 - [ ] `deployment/verify.sh` on the Pi (20/20).
 - [ ] Reboot the Pi → service and timers come back; data persists.
 - [ ] Tailscale Serve: HTTPS from two participant laptops; `curl` from outside the tailnet fails.
+- [ ] Webhook Funnel: GitHub `ping` delivered; from outside the tailnet `:8443/api/health` → 404 and `:443` unreachable.
 - [ ] Healthchecks.io: green when healthy; stop the service → alert e-mail received after the grace period.
 - [ ] Restore a backup copied off the Pi.
