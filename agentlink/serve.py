@@ -3,6 +3,9 @@
     python -m agentlink.serve                 # 127.0.0.1:8080, loads .env
     python -m agentlink.serve --reload        # dev hot reload
     python -m agentlink.serve --host 0.0.0.0  # only behind a TLS proxy/tunnel
+    AGENTLINK_WEBHOOK_PORT=8081 python -m agentlink.serve
+        # + a second loopback listener that serves ONLY POST /api/github/webhook (published via Tailscale Funnel,
+        #   see docs/DEPLOYMENT.md); refuses to start without GITHUB_WEBHOOK_SECRET
 
 On first run without credentials it writes a .env with a random admin token
 (file mode 0600) and prints it once, so a new install needs zero manual config.
@@ -13,6 +16,7 @@ from __future__ import annotations
 import argparse
 import os
 import secrets
+import socket
 from pathlib import Path
 
 
@@ -39,28 +43,56 @@ def ensure_env(path: Path) -> None:
     print(f"\n  Created {path} with a new admin token (shown once):\n\n    {token}\n")
 
 
+def _listen(host: str, port: int) -> socket.socket:
+    sock = socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((host, port))
+    sock.set_inheritable(True)
+    return sock
+
+
+def webhook_listener(port: int | None, main_port: int, reload: bool) -> int | None:
+    """Validate the public webhook listener config; fail closed rather than start half-configured."""
+    if port is None:
+        return None
+    if port == main_port:
+        raise SystemExit("AGENTLINK_WEBHOOK_PORT must differ from --port (the API port must never be public)")
+    if reload:
+        raise SystemExit("--reload cannot be combined with AGENTLINK_WEBHOOK_PORT")
+    if not os.environ.get("GITHUB_WEBHOOK_SECRET", "").strip():
+        raise SystemExit("AGENTLINK_WEBHOOK_PORT is set but GITHUB_WEBHOOK_SECRET is empty: refusing to open it")
+    return port
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Run AgentLink with uvicorn")
     ap.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8080")))
     ap.add_argument("--env-file", default=".env")
     ap.add_argument("--reload", action="store_true")
+    ap.add_argument("--webhook-host", default="127.0.0.1", help="the public webhook listener (default loopback)")
     a = ap.parse_args()
     env = Path(a.env_file)
     ensure_env(env)
-    load_env(env)
+    load_env(env)  # AGENTLINK_WEBHOOK_PORT / GITHUB_WEBHOOK_SECRET may come from the env file
+    from .app import webhook_port_from_env
+
+    hook_port = webhook_listener(webhook_port_from_env(), a.port, a.reload)
     import uvicorn
 
-    uvicorn.run(
-        "agentlink.app:app",
-        host=a.host,
-        port=a.port,
-        reload=a.reload,
-        proxy_headers=True,
-        forwarded_allow_ips="127.0.0.1",
-        timeout_keep_alive=75,  # > long-poll wait, keeps agent connections reusable
-        access_log=False,
-    )
+    opts: dict = {
+        "proxy_headers": True,
+        "forwarded_allow_ips": "127.0.0.1",
+        "timeout_keep_alive": 75,  # > long-poll wait, keeps agent connections reusable
+        "access_log": False,
+    }
+    if hook_port is None:
+        uvicorn.run("agentlink.app:app", host=a.host, port=a.port, reload=a.reload, **opts)
+        return
+    # One process, one hub, two sockets: WebhookIngress tells them apart by the local port of each connection.
+    sockets = [_listen(a.host, a.port), _listen(a.webhook_host, hook_port)]
+    print(f"  webhook-only listener on {a.webhook_host}:{hook_port} (POST /api/github/webhook)")
+    uvicorn.Server(uvicorn.Config("agentlink.app:app", **opts)).run(sockets=sockets)
 
 
 if __name__ == "__main__":

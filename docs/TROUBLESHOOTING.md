@@ -92,7 +92,11 @@ The pill shows *reconectando*. The page reconnects with backoff and replays reta
 - `tailscale status` on both ends; `tailscale serve status` on the Pi shows the HTTPS mapping.
 - Certificate errors → enable HTTPS certificates in the admin console and use the full `*.ts.net` name.
 - Works on the Pi (`curl 127.0.0.1:8080/api/health`) but not remotely → Serve not configured or ACLs block the user.
-- Never use `tailscale funnel` for this service.
+- Never put the API (port 443 / `127.0.0.1:8080`) on `tailscale funnel`. Only the webhook-only listener goes there.
+- GitHub webhook deliveries time out → GitHub cannot reach Serve. Use the webhook Funnel
+  ([DEPLOYMENT.md](DEPLOYMENT.md#github-webhook-tailscale-funnel-webhook-only-listener)) and the `:8443` payload URL.
+  `401` in GitHub's delivery log means the secret differs. A backend that won't start with
+  `GITHUB_WEBHOOK_SECRET is empty` has `AGENTLINK_WEBHOOK_PORT` set without the secret.
 
 ## Restoring data
 

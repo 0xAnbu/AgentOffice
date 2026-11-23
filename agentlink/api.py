@@ -143,8 +143,11 @@ async def agent_guide(_: Request) -> Response:
 
 async def github_webhook(request: Request) -> Response:
     hub = await run_in_threadpool(get_hub)
+    signature = request.headers.get("x-hub-signature-256")
+    # Reachable from the Internet (webhook Funnel): refuse unsigned requests before buffering up to 5 MiB of body.
+    github.verify_signature(hub.settings.github_webhook_secret, b"", signature, header_only=True)
     raw = await read_body(request, 5 * 1024 * 1024)  # GitHub caps payloads at 25 MB; we only need summaries
-    github.verify_signature(hub.settings.github_webhook_secret, raw, request.headers.get("x-hub-signature-256"))
+    github.verify_signature(hub.settings.github_webhook_secret, raw, signature)
     try:
         payload = json.loads(raw)
     except ValueError:
