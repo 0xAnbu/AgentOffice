@@ -5,7 +5,7 @@
 import { token } from '/office/datos.js';
 
 const $ = (id) => document.getElementById(id);
-const TABS = ['usuarios', 'canales', 'proyectos', 'conectar', 'mensajes', 'registro'];
+const TABS = ['usuarios', 'canales', 'proyectos', 'conectar', 'registro'];
 const ROLES = { member: 'member', monitor: 'monitor', admin: 'admin' };
 const BOOTSTRAP_ADMIN = 'admin';  // controlled by AGENTLINK_ADMIN_TOKEN: can't be disabled or deleted
 const PLACEHOLDER = '<TOKEN>';
@@ -594,13 +594,4 @@ for (const id of ['k-user', 'k-project', 'k-runtime']) $(id).addEventListener('c
 for (const id of ['k-repo', 'k-server']) $(id).addEventListener('input', pintarComando);
 $('connect-form').addEventListener('submit', generarConexion);
 $('k-copy').addEventListener('click', (e) => copiar($('k-cmd').textContent, e.currentTarget));
-$('msg-form').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const id = Number($('msg-id').value);
-  if (!id) return;
-  dialogo({
-    title: `Borrar el mensaje #${id}`, ok: 'Borrar', danger: true, intro: 'Se borra el mensaje para todos. No se puede deshacer.',
-    onSubmit: async () => { await pedir(`/api/admin/messages/${id}`, { method: 'DELETE' }); aviso(`Mensaje #${id} borrado`); $('msg-id').value = ''; },
-  });
-});
 arrancar();

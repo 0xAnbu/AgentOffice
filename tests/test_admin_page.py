@@ -50,5 +50,6 @@ def test_admin_page_is_served_without_inline_code(world: World) -> None:
     r = world.c.get("/admin")
     assert r.status_code == 200 and "/static/admin/app.js" in r.text
     assert "<script>" not in r.text and " style=" not in r.text  # CSP: script-src/style-src 'self' only
+    assert "msg-form" not in r.text  # deleting a message by ID stays in the chat and ./admin, not on this page
     for asset in ("app.js", "style.css"):
         assert world.c.get(f"/static/admin/{asset}").status_code == 200
