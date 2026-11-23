@@ -3,7 +3,7 @@
 # by `systemd --user`. It is NOT a Raspberry Pi verification (see docs/PHASE_ACCEPTANCE.md, phase 7).
 # Checks: install, service start, auth, loopback-only binding, persistence across restart, automatic restart after a
 # crash (SIGKILL), consistent backup under concurrent writes, restore, health check + heartbeat sent only when healthy,
-# update, manual rollback and automatic rollback of a broken release. Cleans up after itself.
+# stop.sh/start.sh, update, manual rollback and automatic rollback of a broken release. Cleans up after itself.
 #   deployment/verify.sh [evidence-file]
 set -euo pipefail
 REPO=$(readlink -f "$(dirname "$0")/..")
@@ -101,6 +101,11 @@ start agent-office.service; healthy || fail "service did not come back"
 { systemctl --user list-timers --all | grep -q agent-office-healthcheck.timer && systemctl --user list-timers --all | grep -q agent-office-backup.timer; } || fail "healthcheck and backup timers installed"; ok "healthcheck and backup timers installed"
 
 R1=$(readlink -f "$AO_HOME/current")
+"$D/stop.sh" > "$S/stop.log" 2>&1 || { cat "$S/stop.log"; fail "stop.sh"; }
+{ [ "$(systemctl --user is-active agent-office.service)" != active ] && ! ss -ltnH "sport = :$AO_PORT" | grep -q . && ! systemctl --user is-active --quiet agent-office-healthcheck.timer && ! curl -fs -m 2 "$AO_URL/api/health" >/dev/null; } || fail "stop.sh: service and timers stopped, port free"; ok "stop.sh: service and timers stopped, port free"
+"$D/start.sh" > "$S/start.log" 2>&1 || { cat "$S/start.log"; fail "start.sh"; }
+{ healthy && systemctl --user is-active --quiet agent-office-healthcheck.timer && [ "$(count)" -ge 1 ]; } || fail "start.sh: healthy again, timers active, data kept"; ok "start.sh: healthy again, timers active, data kept"
+
 "$D/update.sh" HEAD > "$S/update.log" 2>&1 || { cat "$S/update.log"; fail "update"; }
 R2=$(readlink -f "$AO_HOME/current")
 { [ "$R1" != "$R2" ] && [ "$(count)" -ge 1 ]; } || fail "update.sh: new release $(basename "$R2"), pre-update backup taken, healthy"; ok "update.sh: new release $(basename "$R2"), pre-update backup taken, healthy"

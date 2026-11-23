@@ -466,6 +466,36 @@ Cada error del instalador termina con una línea `HINT:` que indica la solución
 
 ## K. Mantenimiento
 
+### Parar y volver a arrancar el servidor
+
+AgentOffice no ocupa la terminal: corre **en segundo plano** como servicio de systemd. Así sigue funcionando
+al cerrar la sesión, se reinicia solo si falla y arranca con el equipo. Por eso **cerrar la terminal o pulsar
+Ctrl+C no lo para**. Tailscale (la VPN y la interfaz `tailscale0`) también es un servicio aparte.
+
+| Quiero… | Comando |
+|---|---|
+| Parar AgentOffice (servicio, health check y backups) | `sudo /opt/agent-office/current/deployment/stop.sh` |
+| Parar también la VPN: sin `tailscale0`, sin HTTPS privado ni webhook | `sudo /opt/agent-office/current/deployment/stop.sh --tailscale` |
+| Que no vuelva a arrancar al reiniciar el equipo | añade `--disable` a cualquiera de los dos anteriores |
+| Volver a arrancarlo todo | `sudo /opt/agent-office/current/deployment/start.sh` |
+| Comprobar que funciona de nuevo | `sudo /opt/agent-office/current/deployment/verify-live.sh` |
+
+Al terminar, `stop.sh` comprueba que no quede nada: ningún servicio de AgentOffice activo, ningún proceso del usuario
+`agent-office`, el puerto libre y, con `--tailscale`, ni `tailscaled` ni la interfaz `tailscale0`. Si algo sigue en
+marcha, lo dice y termina con error. Los datos, la configuración y el registro del equipo en la tailnet se conservan:
+`start.sh` vuelve a conectar Tailscale solo, sin auth key, con la misma URL.
+
+> **Cuidado si entras por SSH a través de Tailscale** (una IP `100.x.y.z`): al parar Tailscale se corta tu sesión.
+> `stop.sh --tailscale` lo detecta y se niega. Usa la red local o la consola, o añade `--force` si lo sabes.
+> Mientras está parado, Healthchecks.io deja de recibir latidos y **te avisará** cuando pase el margen
+> (configurable en el panel). Si la parada es intencionada, pulsa *Pause* en el check.
+
+Lo mismo a mano: `sudo systemctl stop agent-office-healthcheck.timer agent-office-backup.timer agent-office`
+(añade `disable` para el arranque) y, para la VPN, `sudo systemctl stop tailscaled`. Comprueba con
+`ip link show tailscale0` (debe decir que no existe) y `systemctl is-active agent-office tailscaled`.
+
+### Otras tareas
+
 - **Verificar el estado:** `sudo /opt/agent-office/src/deployment/verify-live.sh`: informe PASS/FAIL/NOT_VERIFIED,
   sin cambiar nada.
 - **Repetir el bootstrap:** el mismo comando del paso G.5. Es idempotente: si todo está bien, no cambia nada (ni

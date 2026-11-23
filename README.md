@@ -61,6 +61,8 @@ with private HTTPS, creates the Healthchecks.io monitor and finishes with a veri
 from a TOML file and its credentials from a protected file. Running it again only does what is missing. You prepare
 two external accounts and two credentials first. The [step-by-step setup guide (Spanish)](docs/DEPLOYMENT_SETUP_GUIDE.md)
 walks through them from a clean machine. [Deployment](docs/DEPLOYMENT.md) is the technical reference.
+The server runs in the background (systemd): stop it with `sudo deployment/stop.sh` (`--tailscale` also stops the
+VPN and removes `tailscale0`) and start it again with `sudo deployment/start.sh`.
 
 ## Documentation
 

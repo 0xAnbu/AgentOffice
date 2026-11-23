@@ -211,6 +211,24 @@ database leaves the service unhealthy, the previous one is put back automaticall
 `failed-restore-<ts>/`). To verify a backup without restoring:
 `gzip -dc file.db.gz > /tmp/x.db && sqlite3 /tmp/x.db 'PRAGMA integrity_check; SELECT MAX(version) FROM schema_version;'`.
 
+## Stop and start
+
+The backend runs in the background as a systemd service (restart on failure, start at boot), so closing the
+terminal does not stop it. Tailscale (`tailscaled`, interface `tailscale0`) is a separate service.
+
+```bash
+sudo /opt/agent-office/current/deployment/stop.sh               # backend + health-check and backup timers
+sudo /opt/agent-office/current/deployment/stop.sh --tailscale   # also tailscaled: no tailscale0, no Serve/Funnel
+sudo /opt/agent-office/current/deployment/stop.sh --disable     # also keep it stopped across reboots
+sudo /opt/agent-office/current/deployment/start.sh              # start everything again, enabled at boot
+```
+
+`stop.sh` then checks that no unit is active, no process of the `agent-office` user is left, the port is free and,
+with `--tailscale`, that neither `tailscaled` nor `tailscale0` remains; otherwise it lists what is left and exits 1.
+`--tailscale` refuses when the SSH session comes from a tailnet address (`100.64.0.0/10`), since it would drop;
+`--force` overrides. The device stays registered and the Serve/Funnel configuration is kept, so `start.sh` reconnects
+without an auth key. Heartbeats stop while it is down: pause the Healthchecks.io check for a planned stop.
+
 ## Update and rollback
 
 ```bash

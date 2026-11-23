@@ -692,6 +692,24 @@ def test_apply_without_root_is_a_permission_error(tmp_path: Path) -> None:
     assert not (tmp_path / "etc").exists(), "nothing written before the permission check"
 
 
+def test_stop_and_start_help_and_bad_options() -> None:
+    for script in ("stop.sh", "start.sh"):
+        r = cli(script, "--help")
+        assert r.returncode == 0 and "sudo deployment/" in r.stdout, (script, r.stderr)
+        assert cli(script, "--bogus").returncode == 1
+    assert "--tailscale" in cli("stop.sh", "--help").stdout
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="as root stop.sh would really stop the services")
+def test_stop_tailscale_refuses_to_cut_an_ssh_session_through_the_tailnet() -> None:
+    r = cli("stop.sh", "--tailscale", env={"SSH_CONNECTION": "100.101.102.103 50000 100.64.0.1 22"})
+    assert r.returncode == 1 and "comes through Tailscale" in r.stderr
+    r = cli("stop.sh", "--tailscale", env={"SSH_CONNECTION": "192.168.1.20 50000 192.168.1.2 22"})
+    assert r.returncode == 1 and "run as root" in r.stderr  # a LAN session passes the guard
+    r = cli("stop.sh", "--tailscale", "--force", env={"SSH_CONNECTION": "100.101.102.103 50000 100.64.0.1 22"})
+    assert "run as root" in r.stderr
+
+
 def test_secrets_are_never_accepted_as_arguments() -> None:
     r = cli("bootstrap.sh", "--tailscale-auth-key", TS_KEY)
     assert r.returncode == 2 and TS_KEY not in r.stdout + r.stderr
