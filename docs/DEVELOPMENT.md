@@ -72,6 +72,28 @@ rm -f data/agentlink.db data/agentlink.db-wal data/agentlink.db-shm   # server s
 agentlink disconnect --purge                                          # client config, store and installed hooks
 ```
 
+## Deployment scripts
+
+`deployment/provision.py` holds the bootstrap logic (standard library only, must stay importable on Python 3.11);
+the `.sh` files are entry points. External commands and APIs are reached through `AO_*` overrides so tests can point
+them at fakes: `PATH` for `tailscale`/`apt-get`, `AO_GITHUB_API_URL`, `AO_OS_RELEASE`, the
+`[monitoring] api_url`, and `AO_USER_MODE=1` for `systemd --user`. `tests/deploy_fakes.py` provides a fake
+`tailscale` CLI (state in a JSON file, a local TLS proxy with a test CA for Serve), a fake Healthchecks.io v3 API and a
+fake GitHub hooks API.
+
+```bash
+.venv/bin/pytest -o addopts="" tests/test_deploy_unit.py tests/test_deploy_integration.py   # seconds
+AO_DEPLOY_E2E=1 .venv/bin/pytest -o addopts="" tests/test_deploy_e2e.py                     # real systemd --user, ~10 s
+mypy --python-version 3.11 deployment/provision.py
+AO_USER_MODE=1 deployment/preflight.sh --config deployment/deployment.example.toml           # read-only, no root
+```
+
+Rules the tests enforce: no `set -x`, no secret on a command line or in an argv, and no secret in any output, log,
+state or report. Errors are raised as `DeployError(message, hint=...)` so the operator gets the fix, not only the
+symptom. On a distribution outside the tested list (e.g. Kali), the preflight `Platform` row is `WARN`; set
+`AO_OS_RELEASE` to a test `os-release` file to exercise the rest. Never run the bootstrap without `AO_USER_MODE=1` on a development
+machine: it is meant to change the system.
+
 ## Quality gates
 
 ```bash

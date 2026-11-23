@@ -16,6 +16,7 @@ assumed: anything not executed is listed as pending. Raw outputs are in `docs/ev
 | 6 — Chat and realtime | **PASSED** |
 | 7 — Raspberry Pi deployment | **CONDITIONAL** |
 | 8 — Integral validation | **CONDITIONAL** |
+| 9 — Automated deployment (2026-11-23) | **CONDITIONAL** |
 
 Final acceptance requires every phase to pass and a verified deployment on Raspberry Pi. At the recorded revision, several phases were conditional and the target deployment was pending.
 
@@ -231,7 +232,7 @@ verification:
   failed: 0
   skipped: 0
   evidence:
-    - "docs/evidence/deployment-verify-*.log: 20/20 on Linux x86_64 under systemd --user (NOT a Raspberry Pi)"
+    - "docs/evidence/deployment-verify-*.log: 22/22 (latest) on Linux x86_64 under systemd --user (NOT a Raspberry Pi)"
     - "Start, auth, loopback-only binding, persistence, restart after SIGKILL, backup under writes, restore, restore safety, heartbeat only when healthy, timers, update, rollback, broken-release rollback"
 regressions: {detected: 0, unresolved: 0}
 limitations:
@@ -266,4 +267,39 @@ decision:
   advance: false
   next_phase: null
   reason: "Not every phase is PASSED and the production deployment is not verified on the target hardware"
+---
+phase:
+  id: 9
+  name: "Automated deployment (bootstrap, Tailscale, Healthchecks.io)"
+  status: CONDITIONAL
+repository:
+  commit: "feat/automated-deployment (base 5987a92)"
+implementation:
+  completed:
+    - "deploy.sh / bootstrap.sh: unattended, resumable, idempotent provisioning from deployment.toml + a protected secrets file"
+    - "Python >= 3.12 (uv-managed on Debian 12), Tailscale with tag and private HTTPS through Serve, Healthchecks.io check via API v3"
+    - "verify-live.sh and the AGENTOFFICE DEPLOYMENT REPORT (SUCCESS / INCOMPLETE / FAILED); install.sh --wizard"
+    - "docs/DEPLOYMENT_SETUP_GUIDE.md (Spanish, for non-specialists)"
+  pending:
+    - "Run against a real tailnet, a real Healthchecks.io project and (optionally) GitHub"
+    - "Run on Raspberry Pi OS 64-bit, Debian 12 and Ubuntu 24.04; reboot test"
+verification:
+  commands:
+    - "pytest (whole suite)"
+    - "AO_DEPLOY_E2E=1 pytest tests/test_deploy_e2e.py"
+    - "bash deployment/verify.sh"
+  passed: 348
+  failed: 0
+  skipped: 2
+  evidence:
+    - "docs/evidence/automated-deployment-validation.md (levels 1-3 passed, 4-5 NOT_VERIFIED, per-phase contracts)"
+    - "docs/evidence/automated-deployment-tests-20261123.log; docs/evidence/deployment-verify-20261123T132115Z.log (22/22)"
+regressions: {detected: 0, unresolved: 0}
+limitations:
+  - "No reachability check from a second device and no off-machine backups (excluded by scope)"
+  - "External services simulated; Raspberry Pi not available"
+decision:
+  advance: true
+  next_phase: null
+  reason: "Implementation complete and verified locally; a real deployment is required before PASSED"
 ```

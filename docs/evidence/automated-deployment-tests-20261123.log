@@ -1,0 +1,234 @@
+# 2026-11-23T13:23:00Z commit 8ac2069; Linux x86_64; Python 3.14.8; systemd 262
+$ .venv/bin/pytest -o addopts="" -v -p no:warnings tests/test_deploy_unit.py tests/test_deploy_integration.py tests/test_webhook_ingress.py
+============================= test session starts ==============================
+platform linux -- Python 3.14.8, pytest-9.2.0, pluggy-1.7.0 -- /home/kali/Claude/AgentOffice/work/agentics/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/kali/Claude/AgentOffice/work/AgentOffice
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collecting ... collected 203 items
+
+tests/test_deploy_unit.py::test_example_config_is_valid_and_matches_the_defaults PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[deploymnet]\nmode='production'-unknown section [deploymnet]] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[network]\nprovidr='tailscale'-unknown key network.providr] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[application]\nport='8080'-application.port must be int] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[network]\nhttps=1-network.https must be bool] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[application]\nport=true-application.port must be int] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[application]\nbind_host='0.0.0.0'-bind_host must be 127.0.0.1] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[application]\nport=80-between 1024 and 65535] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[application]\ngit_ref='../x'-git_ref] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[network]\npublic_access=true-public_access = true is not supported] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[network]\nhttps=false-network.https must be true] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[network]\ntag='agentoffice'-network.tag] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[monitoring]\ninterval_seconds=60-interval_seconds must be between 300] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[monitoring]\ngrace_seconds=10-grace_seconds] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[monitoring]\napi_url='http://healthchecks.io'-https:// URL] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[monitoring]\nchannels='a,,b'-monitoring.channels] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[python]\nversion='3.11'-python.version] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[python]\ninterpreter='python3'-absolute path] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[deployment]\nmode='staging'-deployment.mode] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[deployment]\nhostname='Agent_Office'-deployment.hostname] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[network]\nprovider='none'-production requires network.provider] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[monitoring]\nprovider='none'-production requires monitoring.provider] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[backup]\nlocal_enabled=false-backup.local_enabled must be true] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[github_webhook]\nenabled=true\nfunnel_port=443-must differ from network.https_port] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[github_webhook]\nenabled=true\nfunnel_port=9443-Tailscale Funnel ports] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[github_webhook]\nenabled=true\nport=8080-different from application.port] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[[github_webhook.repositories]]\nrepo='not a repo'-owner/name] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[[github_webhook.repositories]]\nrepo='o/r'\nchannel='Bad Name'-channel must match] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[[[github_webhook.repositories]]\nrepo='o/r'\nbranch='main'-must be a table with 'repo'] PASSED
+tests/test_deploy_unit.py::test_invalid_configurations_are_rejected_with_a_precise_message[this is = = not toml-invalid TOML] PASSED
+tests/test_deploy_unit.py::test_all_errors_are_reported_at_once PASSED
+tests/test_deploy_unit.py::test_development_mode_may_skip_tailscale_and_monitoring PASSED
+tests/test_deploy_unit.py::test_webhook_requires_tailscale PASSED
+tests/test_deploy_unit.py::test_api_url_allows_plain_http_only_on_loopback PASSED
+tests/test_deploy_unit.py::test_default_channel_name_follows_the_backend_validator PASSED
+tests/test_deploy_unit.py::test_config_search_order PASSED
+tests/test_deploy_unit.py::test_secrets_file_is_read PASSED
+tests/test_deploy_unit.py::test_secrets_file_readable_by_others_is_rejected[420] PASSED
+tests/test_deploy_unit.py::test_secrets_file_readable_by_others_is_rejected[416] PASSED
+tests/test_deploy_unit.py::test_secrets_file_readable_by_others_is_rejected[388] PASSED
+tests/test_deploy_unit.py::test_secrets_file_readable_by_others_is_rejected[432] PASSED
+tests/test_deploy_unit.py::test_secrets_file_symlink_is_rejected PASSED
+tests/test_deploy_unit.py::test_bad_secret_values_are_rejected_without_echoing_them[data0-unknown keys] PASSED
+tests/test_deploy_unit.py::test_bad_secret_values_are_rejected_without_echoing_them[data1-placeholder] PASSED
+tests/test_deploy_unit.py::test_bad_secret_values_are_rejected_without_echoing_them[data2-does not look like a Tailscale auth key] PASSED
+tests/test_deploy_unit.py::test_bad_secret_values_are_rejected_without_echoing_them[data3-must be a string] PASSED
+tests/test_deploy_unit.py::test_bad_secret_values_are_rejected_without_echoing_them[data4-whitespace] PASSED
+tests/test_deploy_unit.py::test_invalid_json_error_does_not_quote_the_file PASSED
+tests/test_deploy_unit.py::test_environment_variables_override_the_file PASSED
+tests/test_deploy_unit.py::test_explicit_missing_secrets_file_is_an_error PASSED
+tests/test_deploy_unit.py::test_the_original_secrets_file_is_never_modified PASSED
+tests/test_deploy_unit.py::test_secret_file_helper_is_private_and_removed PASSED
+tests/test_deploy_unit.py::test_secret_file_is_removed_on_error PASSED
+tests/test_deploy_unit.py::test_redaction_of_registered_and_pattern_secrets PASSED
+tests/test_deploy_unit.py::test_log_lines_are_redacted PASSED
+tests/test_deploy_unit.py::test_env_set_is_atomic_and_keeps_mode PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release0-x86_64-True-True-noble-ubuntu-True] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release1-aarch64-True-True-resolute-ubuntu-True] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release2-x86_64-True-False-jammy-ubuntu-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release3-x86_64-True-True-bookworm-debian-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release4-aarch64-True-True-trixie-debian-True] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release5-arm64-True-True-bookworm-debian-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release6-x86_64-True-False-bullseye-debian-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release7-x86_64-True-False-forky-debian-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release8-x86_64-True-False-jammy-ubuntu-False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release9-x86_64-True-False-kali-rolling--False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release10-x86_64-True-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release11-aarch64-True-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release12-x86_64-True-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release13-armv7l-False-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release14-aarch64-False-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release15-armv7l-False-False---False] PASSED
+tests/test_deploy_unit.py::test_platform_support_matrix[release16-riscv64-False-False---False] PASSED
+tests/test_deploy_unit.py::test_32_bit_userland_and_non_linux_are_refused PASSED
+tests/test_deploy_unit.py::test_raspberry_pi_model_is_recorded PASSED
+tests/test_deploy_unit.py::test_os_release_parsing PASSED
+tests/test_deploy_unit.py::test_detect_os_cli_with_an_os_release_override PASSED
+tests/test_deploy_unit.py::test_python_probe_of_the_running_interpreter PASSED
+tests/test_deploy_unit.py::test_python_probe_reports_problems PASSED
+tests/test_deploy_unit.py::test_python_candidates_prefer_the_recorded_interpreter PASSED
+tests/test_deploy_unit.py::test_tailscale_backend_states[Running-running] PASSED
+tests/test_deploy_unit.py::test_tailscale_backend_states[NeedsLogin-needs_login] PASSED
+tests/test_deploy_unit.py::test_tailscale_backend_states[NeedsMachineAuth-needs_approval] PASSED
+tests/test_deploy_unit.py::test_tailscale_backend_states[Stopped-stopped] PASSED
+tests/test_deploy_unit.py::test_tailscale_backend_states[Starting-starting] PASSED
+tests/test_deploy_unit.py::test_tailscale_backend_states[NoState-starting] PASSED
+tests/test_deploy_unit.py::test_tailscale_backend_states[Weird-unknown] PASSED
+tests/test_deploy_unit.py::test_tailscale_running_details PASSED
+tests/test_deploy_unit.py::test_tailscale_https_disabled_and_missing_fields PASSED
+tests/test_deploy_unit.py::test_tailscale_up_errors_are_diagnosed[backend error: invalid key: API key does not exist-rejected the auth key] PASSED
+tests/test_deploy_unit.py::test_tailscale_up_errors_are_diagnosed[backend error: requested tags [tag:x] are invalid or not permitted-refused the tag] PASSED
+tests/test_deploy_unit.py::test_tailscale_up_errors_are_diagnosed[dial tcp: lookup controlplane.tailscale.com: no such host-DNS problem] PASSED
+tests/test_deploy_unit.py::test_tailscale_up_errors_are_diagnosed[timeout waiting for Tailscale service to enter a Running state-timed out] PASSED
+tests/test_deploy_unit.py::test_tailscale_up_errors_are_diagnosed[open /var/lib/tailscale: permission denied-permission problem] PASSED
+tests/test_deploy_unit.py::test_tailscale_up_errors_are_diagnosed[something else-tailscale up failed] PASSED
+tests/test_deploy_unit.py::test_serve_config_interpretation_for_the_api[serve0-absent] PASSED
+tests/test_deploy_unit.py::test_serve_config_interpretation_for_the_api[serve1-ours] PASSED
+tests/test_deploy_unit.py::test_serve_config_interpretation_for_the_api[serve2-ours] PASSED
+tests/test_deploy_unit.py::test_serve_config_interpretation_for_the_api[serve3-conflict] PASSED
+tests/test_deploy_unit.py::test_serve_config_interpretation_for_the_api[serve4-conflict] PASSED
+tests/test_deploy_unit.py::test_serve_config_interpretation_for_the_api[serve5-conflict] PASSED
+tests/test_deploy_unit.py::test_serve_config_interpretation_for_the_api[serve6-conflict] PASSED
+tests/test_deploy_unit.py::test_serve_config_interpretation_for_the_api[serve7-exposed] PASSED
+tests/test_deploy_unit.py::test_serve_config_interpretation_for_the_api[serve8-exposed] PASSED
+tests/test_deploy_unit.py::test_serve_config_interpretation_for_the_webhook_funnel PASSED
+tests/test_deploy_unit.py::test_channel_selection PASSED
+tests/test_deploy_unit.py::test_desired_check_and_drift PASSED
+tests/test_deploy_unit.py::test_check_validation PASSED
+tests/test_deploy_unit.py::test_http_retries_only_transient_errors[codes0-200-3] PASSED
+tests/test_deploy_unit.py::test_http_retries_only_transient_errors[codes1-200-2] PASSED
+tests/test_deploy_unit.py::test_http_retries_only_transient_errors[codes2-401-1] PASSED
+tests/test_deploy_unit.py::test_http_retries_only_transient_errors[codes3-403-1] PASSED
+tests/test_deploy_unit.py::test_http_retries_only_transient_errors[codes4-404-1] PASSED
+tests/test_deploy_unit.py::test_http_gives_up_after_bounded_retries PASSED
+tests/test_deploy_unit.py::test_http_unreachable_is_a_clear_error PASSED
+tests/test_deploy_unit.py::test_overall_result PASSED
+tests/test_deploy_unit.py::test_report_format_and_redaction PASSED
+tests/test_deploy_unit.py::test_state_file_is_private PASSED
+tests/test_deploy_unit.py::test_wizard_config_rendering_is_valid_toml_and_escapes PASSED
+tests/test_deploy_integration.py::test_tailscale_not_installed_is_planned_in_dry_run PASSED
+tests/test_deploy_integration.py::test_tailscale_daemon_not_running_is_detected PASSED
+tests/test_deploy_integration.py::test_disconnected_device_is_registered_with_the_key_from_a_file PASSED
+tests/test_deploy_integration.py::test_connected_device_keeps_its_identity PASSED
+tests/test_deploy_integration.py::test_connected_device_needs_no_key PASSED
+tests/test_deploy_integration.py::test_wrong_tailnet_is_refused_without_changes PASSED
+tests/test_deploy_integration.py::test_expected_tailnet_matches_by_name_or_magicdns_suffix PASSED
+tests/test_deploy_integration.py::test_registration_failures_are_diagnosed[setup0-rejected the auth key] PASSED
+tests/test_deploy_integration.py::test_registration_failures_are_diagnosed[setup1-refused the tag tag:agentoffice-server] PASSED
+tests/test_deploy_integration.py::test_registration_failures_are_diagnosed[setup2-must be approved] PASSED
+tests/test_deploy_integration.py::test_registration_failures_are_diagnosed[setup3-timed out] PASSED
+tests/test_deploy_integration.py::test_device_pending_approval_and_stopped_are_not_overridden PASSED
+tests/test_deploy_integration.py::test_missing_key_for_an_unregistered_device PASSED
+tests/test_deploy_integration.py::test_dry_run_never_registers PASSED
+tests/test_deploy_integration.py::test_serve_absent_is_configured_privately_and_verified_through_tls PASSED
+tests/test_deploy_integration.py::test_tls_verification_is_never_disabled PASSED
+tests/test_deploy_integration.py::test_serve_already_configured_is_left_alone PASSED
+tests/test_deploy_integration.py::test_incompatible_serve_config_is_not_overwritten PASSED
+tests/test_deploy_integration.py::test_api_on_funnel_is_a_security_failure PASSED
+tests/test_deploy_integration.py::test_tailnet_prerequisites[flags0-MagicDNS] PASSED
+tests/test_deploy_integration.py::test_tailnet_prerequisites[flags1-HTTPS certificates] PASSED
+tests/test_deploy_integration.py::test_serve_failure_is_reported PASSED
+tests/test_deploy_integration.py::test_check_is_created_when_none_exists PASSED
+tests/test_deploy_integration.py::test_existing_managed_check_is_reused_without_writes PASSED
+tests/test_deploy_integration.py::test_outdated_check_is_updated_in_place PASSED
+tests/test_deploy_integration.py::test_foreign_check_with_the_same_name_is_not_touched PASSED
+tests/test_deploy_integration.py::test_duplicate_checks_are_refused PASSED
+tests/test_deploy_integration.py::test_selected_integrations_only PASSED
+tests/test_deploy_integration.py::test_healthchecks_failure_modes[no_channels-no integrations] PASSED
+tests/test_deploy_integration.py::test_healthchecks_failure_modes[unavailable-unavailable after 3 attempts] PASSED
+tests/test_deploy_integration.py::test_healthchecks_failure_modes[incomplete-no usable ping_url] PASSED
+tests/test_deploy_integration.py::test_healthchecks_failure_modes[post_500-unavailable after 3 attempts] PASSED
+tests/test_deploy_integration.py::test_invalid_key_is_not_retried PASSED
+tests/test_deploy_integration.py::test_rate_limit_is_retried PASSED
+tests/test_deploy_integration.py::test_no_key_keeps_an_existing_ping_url PASSED
+tests/test_deploy_integration.py::test_monitor_dry_run_makes_no_request PASSED
+tests/test_deploy_integration.py::test_hook_is_created_once_and_updated_when_the_secret_changes PASSED
+tests/test_deploy_integration.py::test_missing_packages_are_installed PASSED
+tests/test_deploy_integration.py::test_dependency_installation_error_is_reported PASSED
+tests/test_deploy_integration.py::test_present_packages_are_not_reinstalled PASSED
+tests/test_deploy_integration.py::test_without_apt_present_commands_are_enough PASSED
+tests/test_deploy_integration.py::test_without_apt_missing_commands_are_reported PASSED
+tests/test_deploy_integration.py::test_untested_distribution_is_a_warning_not_a_failure PASSED
+tests/test_deploy_integration.py::test_no_tailscale_repository_requires_a_manual_install PASSED
+tests/test_deploy_integration.py::test_non_glibc_without_python_is_explained PASSED
+tests/test_deploy_integration.py::test_missing_tailscale_asks_and_runs_the_official_script PASSED
+tests/test_deploy_integration.py::test_declining_the_tailscale_install_fails_with_the_command PASSED
+tests/test_deploy_integration.py::test_precheck_reports_how_tailscale_will_be_installed PASSED
+tests/test_deploy_integration.py::test_install_script_is_piped_to_sh PASSED
+tests/test_deploy_integration.py::test_failed_script_download_installs_nothing PASSED
+tests/test_deploy_integration.py::test_wizard_stops_when_production_tailscale_install_is_declined PASSED
+tests/test_deploy_integration.py::test_uv_with_a_wrong_checksum_is_not_installed PASSED
+tests/test_deploy_integration.py::test_help_of_every_entry_point PASSED
+tests/test_deploy_integration.py::test_missing_config_is_a_clear_error PASSED
+tests/test_deploy_integration.py::test_invalid_config_lists_the_errors PASSED
+tests/test_deploy_integration.py::test_insecure_secrets_file_is_refused_and_kept PASSED
+tests/test_deploy_integration.py::test_apply_without_root_is_a_permission_error PASSED
+tests/test_deploy_integration.py::test_stop_and_start_help_and_bad_options PASSED
+tests/test_deploy_integration.py::test_stop_tailscale_refuses_to_cut_an_ssh_session_through_the_tailnet PASSED
+tests/test_deploy_integration.py::test_secrets_are_never_accepted_as_arguments PASSED
+tests/test_deploy_integration.py::test_interrupt_returns_130 PASSED
+tests/test_deploy_integration.py::test_no_set_x_and_no_secret_flags_in_the_entry_points PASSED
+tests/test_webhook_ingress.py::test_github_reaches_the_webhook_through_the_public_listener PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[GET-/api/health] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[GET-/api/me] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[GET-/api/channels] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[POST-/api/admin/agents] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[POST-/mcp] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[GET-/] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[GET-/tareas] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[GET-/static/agent-guide.md] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[GET-/api/agent-guide] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[GET-/api/github/webhook] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[PUT-/api/github/webhook] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[POST-/api/github/webhook/] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[POST-/api/github/webhook/../me] PASSED
+tests/test_webhook_ingress.py::test_public_listener_serves_nothing_but_the_webhook[POST-/api/github/webhook%2f..%2fme] PASSED
+tests/test_webhook_ingress.py::test_unsigned_deliveries_are_refused_before_the_body_is_read PASSED
+tests/test_webhook_ingress.py::test_public_listener_refuses_websockets PASSED
+tests/test_webhook_ingress.py::test_public_listener_fails_closed[env0-GITHUB_WEBHOOK_SECRET is empty] PASSED
+tests/test_webhook_ingress.py::test_public_listener_fails_closed[env1-must differ] PASSED
+tests/test_webhook_ingress.py::test_deployment_publishes_only_the_webhook_port PASSED
+tests/test_webhook_ingress.py::test_contract_parser_catches_a_funnelled_api PASSED
+tests/test_webhook_ingress.py::test_service_keeps_the_api_on_loopback PASSED
+
+============================= 203 passed in 24.57s =============================
+
+$ AO_DEPLOY_E2E=1 .venv/bin/pytest -o addopts="" -v -p no:warnings tests/test_deploy_e2e.py
+============================= test session starts ==============================
+platform linux -- Python 3.14.8, pytest-9.2.0, pluggy-1.7.0 -- /home/kali/Claude/AgentOffice/work/agentics/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/kali/Claude/AgentOffice/work/AgentOffice
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collecting ... collected 1 item
+
+tests/test_deploy_e2e.py::test_bootstrap_end_to_end PASSED
+
+============================== 1 passed in 10.17s ==============================
+
+$ .venv/bin/pytest -o addopts="" -q -p no:warnings -rf   # whole suite
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_cross_platform.py:126: node not installed
+SKIPPED [1] tests/test_deploy_e2e.py:206: set AO_DEPLOY_E2E=1 (slow end-to-end)
+348 passed, 2 skipped in 47.19s

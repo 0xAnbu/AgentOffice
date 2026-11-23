@@ -2,8 +2,20 @@
 # First install on a 64-bit Linux host (Raspberry Pi OS 64-bit, Debian, Ubuntu...). Idempotent: re-running keeps the
 # existing database and secrets. Run from a checkout of the repository:
 #   sudo deployment/install.sh [git-ref]          (default ref: HEAD of this checkout)
+#   sudo deployment/install.sh --wizard           (questions -> /etc/agent-office/deployment.toml -> deploy.sh:
+#                                                  production with Tailscale, Healthchecks.io, optional GitHub webhook)
+# The admin token is printed only when stdout is a terminal (AO_SHOW_TOKEN=1/0 forces it); unattended runs print only
+# where it is stored, so it never lands in a log.
 set -euo pipefail
 HERE=$(dirname "$(readlink -f "$0")")
+case "${1:-}" in
+  -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
+  -*) [ "$1" = --wizard ] || { echo "install.sh: unknown option $1 (see --help)" >&2; exit 2; };;
+esac
+if [ "${1:-}" = --wizard ]; then
+  shift
+  exec "$HERE/bootstrap.sh" wizard "$@"
+fi
 . "$HERE/lib.sh"
 SRC=$(readlink -f "$HERE/..")
 REF=${1:-HEAD}
@@ -40,9 +52,15 @@ if [ ! -f "$AO_ENV_FILE" ]; then
       -e "s#^AO_URL=.*#AO_URL=$AO_URL#" "$HERE/agent-office.env.example" > "$AO_ENV_FILE"
   [ "$AO_USER_MODE" = 1 ] || chown "root:$AO_USER" "$AO_ENV_FILE"
   chmod 640 "$AO_ENV_FILE"
-  printf '\n  Admin token (shown once, also in %s):\n\n    %s\n\n' "$AO_ENV_FILE" "$TOKEN"
+  if [ "${AO_SHOW_TOKEN:-$([ -t 1 ] && echo 1 || echo 0)}" = 1 ]; then
+    printf '\n  Admin token (shown once, also in %s):\n\n    %s\n\n' "$AO_ENV_FILE" "$TOKEN"
+  else
+    log "admin token generated and stored in $AO_ENV_FILE (AGENTLINK_ADMIN_TOKEN); not printed (stdout is not a terminal)"
+  fi
+  unset TOKEN
 fi
-printf 'AO_SRC=%s\n' "$SRC" > "$AO_ETC/deploy.conf"
+PYABS=$(readlink -f "$(command -v "$PYTHON")")
+printf 'AO_SRC=%s\nAO_PYTHON=%s\n' "$SRC" "$PYABS" > "$AO_ETC/deploy.conf"
 
 # -- code -----------------------------------------------------------------------------------------------------------
 REL=$(build_release "$SRC" "$REF")
@@ -59,4 +77,4 @@ sctl enable --now agent-office.service agent-office-healthcheck.timer agent-offi
 sctl restart agent-office.service
 wait_healthy 40 || die "service did not become healthy; see: journalctl -u agent-office -n 50"
 log "installed $(basename "$REL"); listening on $AO_URL (loopback only)"
-log "next: Tailscale Serve (docs/DEPLOYMENT.md §Tailscale) and HC_PING_URL in $AO_ENV_FILE"
+log "next: deployment/deploy.sh (Tailscale HTTPS + Healthchecks.io), see docs/DEPLOYMENT_SETUP_GUIDE.md"

@@ -19,6 +19,12 @@ AO_URL=${AO_URL:-http://127.0.0.1:$AO_PORT}
 AO_USER_MODE=${AO_USER_MODE:-0}          # 1 = units under `systemctl --user` (verification sandbox only)
 AO_KEEP_RELEASES=${AO_KEEP_RELEASES:-5}
 AO_ENV_FILE=${AO_ENV_FILE:-$AO_ETC/agent-office.env}
+# Interpreter: $PYTHON if given, else the one recorded by install.sh in deploy.conf (e.g. the uv-managed CPython on
+# Debian 12, so update.sh/backup.sh keep using it), else the system python3. deploy.conf is read as data, not sourced.
+if [ -z "${PYTHON:-}" ] && [ -r "$AO_ETC/deploy.conf" ]; then
+  PYTHON=$(sed -n 's/^AO_PYTHON=//p' "$AO_ETC/deploy.conf" | tail -1)
+  [ -n "$PYTHON" ] && [ -x "$PYTHON" ] || PYTHON=""
+fi
 PYTHON=${PYTHON:-python3}
 
 log() { printf '[agent-office] %s\n' "$*" >&2; }

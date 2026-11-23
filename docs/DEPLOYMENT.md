@@ -7,9 +7,61 @@ Healthchecks.io. No Docker, no public port, no domain.
 > Python 3.14) under `systemd --user` and by CI. See the [deployment evidence](evidence/README.md). They have **not** yet been run on a Raspberry Pi, and Tailscale
 > Serve and a real Healthchecks.io check have not been configured end-to-end. See the checklist at the end.
 
+## Automated deployment
+
+`deployment/deploy.sh` (alias of `bootstrap.sh`) runs every step of this document unattended and verifies the
+result. The [setup guide](DEPLOYMENT_SETUP_GUIDE.md) (Spanish, for non-specialists) covers the account preparation;
+this section is the reference.
+
+```bash
+sudo deployment/preflight.sh  --config /etc/agent-office/deployment.toml --secrets-file /root/agentoffice-secrets.json  # read-only checks
+sudo deployment/deploy.sh --dry-run --config … --secrets-file …   # plan, nothing changed, no remote writes
+sudo deployment/deploy.sh           --config … --secrets-file …   # deploy (resumable, idempotent)
+sudo deployment/verify-live.sh                                     # PASS / FAIL / NOT_VERIFIED report, read-only
+sudo deployment/install.sh --wizard                                # interactive: writes the config, asks secrets hidden
+```
+
+- **Configuration:** TOML, validated strictly (unknown keys, wrong types and forbidden values such as
+  `public_access = true` or `bind_host` other than loopback are rejected, all errors at once). Search order:
+  `--config`, `./deployment.toml`, `/etc/agent-office/deployment.toml`. It is copied to
+  `/etc/agent-office/deployment.toml` so re-runs and `verify-live.sh` need no flag. Template:
+  `deployment/deployment.example.toml`.
+- **Secrets:** a JSON file (`--secrets-file`, default `deployment/bootstrap-secrets.json`, gitignored) that must be a
+  regular file, mode `600`/`400`, owned by root or the invoking user; or `AO_TAILSCALE_AUTH_KEY`,
+  `AO_HEALTHCHECKS_API_KEY`, `AO_GITHUB_TOKEN`, `AO_GITHUB_WEBHOOK_SECRET`. Never on the command line. The file is
+  never modified or deleted. Secrets reach `tailscale up` through a private temporary file, and the Healthchecks.io
+  API through a request header. They are never written to logs, the state or the report. Only `HC_PING_URL` (and
+  the webhook secret, if enabled) is stored, in the `640` env file.
+- **Stages** (state in `/etc/agent-office/bootstrap-state.json`): `dependencies` (apt) → `python` (system ≥ 3.12,
+  else uv-managed CPython, e.g. on Debian 12) → `install` (`install.sh`, skipped if already installed and healthy) →
+  `tailscale` (if missing: in a terminal you are asked to install it with `curl -fsSL https://tailscale.com/install.sh | sh`; `--install-tailscale` runs it
+  without asking; unattended runs use the official apt repository with the key pinned; `tailscale up` with the tag, only if not already connected; refuses a
+  different tailnet) → `https` (Serve on `https_port` → `127.0.0.1:<port>`; never overwrites another mapping;
+  refuses Funnel on that port) → `github_webhook` (optional, see below) → `monitoring` (Healthchecks.io Management
+  API v3: create, reuse or update the check `check_name`; refuses projects with no integrations and checks it did
+  not create unless `adopt_existing`) → `services` → verification. A completed stage is re-checked, not redone.
+- **Report:** printed and saved to `/etc/agent-office/bootstrap-report.txt`; log in
+  `/var/log/agent-office/bootstrap.log`. Each mandatory row is `PASS`, `FAIL` or `NOT_VERIFIED`. The result is
+  `SUCCESS` only if all are `PASS`, `FAILED` if any is `FAIL`, otherwise `INCOMPLETE`. TLS is verified against the
+  system CAs for the MagicDNS name, never skipped. The API is checked through Serve (health, 401 without a token,
+  200 with the admin token), then a WebSocket handshake. Exit code 0 only for `SUCCESS`, otherwise 1 (2 for a usage
+  error).
+- **Supported:** any Linux on `x86_64`/`aarch64` with a 64-bit userland and systemd. **Tested** (preflight `PASS`):
+  Ubuntu ≥ 24.04, Debian 12/13, Raspberry Pi OS 64-bit. Other distributions get a `WARN` and the same stages:
+  packages via `apt-get` when present, otherwise the required commands must already be installed. A missing
+  Tailscale is installed with the official script (asked in a terminal, or `--install-tailscale`); unattended
+  (`--non-interactive`) it comes from its apt repository for Debian/Ubuntu and derivatives that declare
+  `UBUNTU_CODENAME`/`DEBIAN_CODENAME`, otherwise the preflight fails naming both options. Python comes from uv on glibc systems without a
+  Python ≥ 3.12. Refused: 32-bit, other architectures, a 32-bit userland on a 64-bit kernel,
+  non-Linux systems.
+- **Not covered by the verification:** reachability from other devices (see
+  [Troubleshooting](TROUBLESHOOTING.md#reachability-from-other-devices)) and off-machine backups.
+
+The sections below describe the same steps done by hand.
+
 ## Requirements
 
-- 64-bit Linux (`aarch64` or `x86_64`): Raspberry Pi OS 64-bit (Bookworm or later), Debian 12+, Ubuntu 24.04+. Any
+- 64-bit Linux (`aarch64` or `x86_64`). Tested: Raspberry Pi OS 64-bit (Bookworm or later), Debian 12+, Ubuntu 24.04+. Any
   Raspberry Pi able to run a 64-bit OS (Pi 3B+/4/5, Zero 2 W) should work; no Pi-specific API is used.
 - Python **≥ 3.12** with `venv` and SQLite **≥ 3.35** (checked by `install.sh`). Debian 12 ships Python 3.11: use
   Raspberry Pi OS/Debian 13 (Python 3.13) or install 3.12+ (e.g. `uv python install 3.12` and run `install.sh` with
@@ -159,6 +211,24 @@ database leaves the service unhealthy, the previous one is put back automaticall
 `failed-restore-<ts>/`). To verify a backup without restoring:
 `gzip -dc file.db.gz > /tmp/x.db && sqlite3 /tmp/x.db 'PRAGMA integrity_check; SELECT MAX(version) FROM schema_version;'`.
 
+## Stop and start
+
+The backend runs in the background as a systemd service (restart on failure, start at boot), so closing the
+terminal does not stop it. Tailscale (`tailscaled`, interface `tailscale0`) is a separate service.
+
+```bash
+sudo /opt/agent-office/current/deployment/stop.sh               # backend + health-check and backup timers
+sudo /opt/agent-office/current/deployment/stop.sh --tailscale   # also tailscaled: no tailscale0, no Serve/Funnel
+sudo /opt/agent-office/current/deployment/stop.sh --disable     # also keep it stopped across reboots
+sudo /opt/agent-office/current/deployment/start.sh              # start everything again, enabled at boot
+```
+
+`stop.sh` then checks that no unit is active, no process of the `agent-office` user is left, the port is free and,
+with `--tailscale`, that neither `tailscaled` nor `tailscale0` remains; otherwise it lists what is left and exits 1.
+`--tailscale` refuses when the SSH session comes from a tailnet address (`100.64.0.0/10`), since it would drop;
+`--force` overrides. The device stays registered and the Serve/Funnel configuration is kept, so `start.sh` reconnects
+without an auth key. Heartbeats stop while it is down: pause the Healthchecks.io check for a planned stop.
+
 ## Update and rollback
 
 ```bash
@@ -196,7 +266,7 @@ unhealthy, update, manual rollback and automatic rollback of a broken release.
 ### Raspberry Pi acceptance checklist (pending — needs the hardware)
 
 - [ ] `install.sh` on Raspberry Pi OS 64-bit; record `uname -a`, `python3 --version`, `sqlite3 --version`.
-- [ ] `deployment/verify.sh` on the Pi (20/20).
+- [ ] `deployment/verify.sh` on the Pi (22/22).
 - [ ] Reboot the Pi → service and timers come back; data persists.
 - [ ] Tailscale Serve: HTTPS from two participant laptops; `curl` from outside the tailnet fails.
 - [ ] Webhook Funnel: GitHub `ping` delivered; from outside the tailnet `:8443/api/health` → 404 and `:443` unreachable.

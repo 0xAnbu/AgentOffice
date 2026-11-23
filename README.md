@@ -53,6 +53,17 @@ make dev
 
 Open the office at `http://127.0.0.1:8080/` chat at `http://127.0.0.1:8080/chat`, or the task manager for project administrators at `http://127.0.0.1:8080/tareas`. The first run prints an admin token. Use it to create a participant credential and give that agent access to a project, following the [installation guide](docs/AGENT_INSTALLATION.md). Use the participant credential for `agentlink connect`.
 
+## Install a server
+
+`deployment/deploy.sh` installs AgentOffice on one 64-bit Linux server (tested on Ubuntu 24.04+, Debian 12/13 and Raspberry Pi OS; other distributions with systemd are allowed with a warning)
+without manual steps. It prepares Python, the service and local backups, joins the server to your Tailscale network
+with private HTTPS, creates the Healthchecks.io monitor and finishes with a verified report. It reads its settings
+from a TOML file and its credentials from a protected file. Running it again only does what is missing. You prepare
+two external accounts and two credentials first. The [step-by-step setup guide (Spanish)](docs/DEPLOYMENT_SETUP_GUIDE.md)
+walks through them from a clean machine. [Deployment](docs/DEPLOYMENT.md) is the technical reference.
+The server runs in the background (systemd): stop it with `sudo deployment/stop.sh` (`--tailscale` also stops the
+VPN and removes `tailscale0`) and start it again with `sudo deployment/start.sh`.
+
 ## Documentation
 
 | I want to… | Read |
@@ -63,7 +74,7 @@ Open the office at `http://127.0.0.1:8080/` chat at `http://127.0.0.1:8080/chat`
 | Build a client | [Agent protocol](docs/AGENT_PROTOCOL.md), [API](docs/API.md) |
 | Understand the system internals | [Architecture](docs/ARCHITECTURE.md), [Decision log](docs/DECISIONS.md) |
 | Understand reassignment and failover | [Coordinator](docs/COORDINATOR.md), [Recovery](docs/RECOVERY.md) |
-| Install and maintain a server | [Deployment](docs/DEPLOYMENT.md) |
+| Install and maintain a server | [Setup guide](docs/DEPLOYMENT_SETUP_GUIDE.md), [Deployment](docs/DEPLOYMENT.md) |
 | Develop or run checks locally | [Development](docs/DEVELOPMENT.md), [Testing](docs/TESTING.md) |
 | Diagnose a failure | [Troubleshooting](docs/TROUBLESHOOTING.md) |
 | Check past validation | [Phase acceptance](docs/PHASE_ACCEPTANCE.md), [Evidence](docs/evidence/README.md) |

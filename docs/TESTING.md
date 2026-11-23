@@ -10,6 +10,7 @@ Run `make install` with Python 3.12 or later first.
 | `make test-failures` | recovery and client failure scenarios (`tests/test_recovery.py`, `tests/test_client.py`) | nothing |
 | `make smoke` | a real uvicorn server driven through the CLI, curl and a WebSocket client | nothing |
 | `bash deployment/verify.sh` | install/service/backup/restore/healthcheck/update/rollback under `systemd --user` | Linux + systemd |
+| `AO_DEPLOY_E2E=1 pytest tests/test_deploy_e2e.py` | the whole bootstrap end to end against fakes, three runs (interrupted, first, repeat) | Linux + `systemd --user` + openssl |
 | `make visual TOKEN=…` | headless Chromium on `/` and `/chat` (errors, scene state, screenshots) | Chromium, a running server |
 | `make test-runtimes [ONLY=claude,codex,opencode,cross]` | real Claude Code / Codex / OpenCode | the CLIs installed and logged in; **spends quota** |
 
@@ -40,6 +41,22 @@ Run `make install` with Python 3.12 or later first.
   `docs/evidence/runtime-e2e-<utc>.json` with every step and the runtime versions. OpenCode should be run with a
   model the account can use (`AGENTLINK_OPENCODE_MODEL`, e.g. `opencode-go/deepseek-v4.1-flash`).
 
+- **Automated deployment** — five levels, kept apart on purpose:
+  1. *Unit* (`tests/test_deploy_unit.py`, 119): config schema and every rejected value, secrets file permissions and
+     placeholders, platform matrix (tested vs allowed distributions, derivatives, 32-bit and other architectures refused), Python selection, Tailscale and
+     Serve state classification, Healthchecks payloads, report verdicts, redaction.
+  2. *Simulated services* (`tests/test_deploy_integration.py`, 62): `stop.sh`/`start.sh` options and SSH guard, missing Tailscale asked/declined/`--install-tailscale` and the install script piped to `sh` from a local server, fake `tailscale` (bad/expired/used key, tag
+     refused, pending approval, stopped, wrong tailnet, MagicDNS/HTTPS disabled, Serve conflict, API on Funnel), real
+     TLS through a local proxy with a test CA (verification never disabled), fake Healthchecks.io v3
+     (create/reuse/update, foreign and duplicate checks, no integrations, 401/403 not retried, 429/5xx retried), fake
+     GitHub hooks, apt and uv checksum failures, CLI help, root and secret handling.
+  3. *Local integration* (`tests/test_deploy_e2e.py`, opt-in): real `install.sh`, real units under `systemd --user`,
+     fakes for the external services. A run interrupted at `monitoring` is resumed. A second full run makes no remote
+     write, changes no credential or release and keeps the database (same inode, message preserved). No secret
+     appears anywhere and the secrets file is untouched.
+  4. *Real Tailscale / Healthchecks.io / GitHub* — **NOT_VERIFIED**.
+  5. *Real Raspberry Pi* — **NOT_VERIFIED**. Results: [automated-deployment-validation.md](evidence/automated-deployment-validation.md).
+
 ## Acceptance scenarios and checks
 
 | # | Scenario | Test / evidence |
@@ -57,7 +74,7 @@ Run `make install` with Python 3.12 or later first.
 | 11 | Visualisation | `test_snapshot_places_sessions_on_specialization_floors`, `test_floor_mapping_fallback`, `scripts/visual_check.py` (real Chromium, `docs/evidence/visual/`) |
 | 12 | Chat | `test_message_search_pagination_and_project_filter`, `test_ws_*`, `visual_check.py` (`/chat`) |
 | — | Task manager (`/tareas`) | `tests/test_board.py` (admins and project admins only; current tasks plus open handoffs/alerts/questions, hidden once resolved; assignment notice at the task's priority; `409` on a stale version; project admins edit others' tasks; designation is a priority-1 offer), `visual_check.py` (`/tareas`) |
-| 13 | External supervision | `test_deep_health`; `deployment/verify.sh` (heartbeat only when healthy, none when down). A real Healthchecks.io check is **not** configured (manual, see DEPLOYMENT.md) |
+| 13 | External supervision | `test_deep_health`; `deployment/verify.sh` (heartbeat only when healthy, none when down). Check creation/reuse against a fake v3 API in `tests/test_deploy_integration.py`; a real Healthchecks.io check is **not** verified |
 | 14 | Cross-provider autonomous communication | `runtime-e2e-20261121T224306Z.json` (Claude Code ↔ Codex, real) |
 | 15 | Received but not processed | `test_received_but_unprocessed_message_stays_pending_and_alerts` |
 | 16 | Duplicate work and Git | `test_old_holder_cannot_complete_with_stale_epoch` + supervisor AUTHORITY LOST notice; Git limits in RECOVERY.md (no Git operation is blocked) |
