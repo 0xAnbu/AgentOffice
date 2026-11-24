@@ -161,6 +161,7 @@ def handle(
     if event == "UserPromptSubmit":
         if local_id:
             store.activity(local_id, "prompt", "", progress=True)
+            store.x("UPDATE sessions SET state = 'executing' WHERE local_id = ?", (local_id,))  # busy until Stop
         msgs = _inject(store, api, s, store.pending(only_new=True), f"{runtime}:UserPromptSubmit")
         if not msgs:
             return None
@@ -169,6 +170,7 @@ def handle(
     if event == "PostToolUse":
         if local_id:
             store.activity(local_id, "tool", str(payload.get("tool_name") or ""), progress=True)
+            store.x("UPDATE sessions SET state = 'executing' WHERE local_id = ?", (local_id,))
         urgent = _inject(store, api, s, store.pending(max_priority=1, only_new=True), f"{runtime}:PostToolUse")
         if not urgent:
             return None

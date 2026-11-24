@@ -39,6 +39,7 @@ CAPABILITIES = (
     "lifecycle",
 )
 HOOK_MARK = "agentlink hook"  # marker in files we own (plugins)
+PUSH_BACKOFF = 120.0  # seconds a session is left alone after an active push failed
 
 
 def ours(command: str) -> bool:
@@ -249,7 +250,7 @@ class Codex(ClaudeCode):
         "observation": "IMPLEMENTED_NOT_VERIFIED",  # codex hooks need the participant's own hook trust; not exercised
         "notification": "SUPPORTED_AND_TESTED",  # supervisor stores and confirms (real run)
         "injection": "SUPPORTED_AND_TESTED",  # headless `codex exec` turn with the rendered message (real run)
-        "resume": "IMPLEMENTED_NOT_VERIFIED",  # `codex exec resume <thread>` / `codex queue`: not exercised
+        "resume": "SUPPORTED_AND_TESTED",  # `codex queue --thread` into an open TUI, idle/busy/closed (real run, 0.171)
         "acknowledgement": "PARTIALLY_SUPPORTED",  # exec sandbox has no network: the supervisor relays the answer
         "processing": "SUPPORTED_AND_TESTED",  # final message relayed as reply authored by the agent token (real run)
         "subagents": "UNKNOWN",  # not investigated
@@ -257,7 +258,10 @@ class Codex(ClaudeCode):
     }
     notes = {
         "hooks": "Codex runs hooks only after the participant trusts them in Codex itself. Agent Office never bypasses hook "
-        "trust. Until trusted, delivery uses `codex exec resume`.",
+        "trust. Hooks only deliver when a turn starts; with --auto-resume the supervisor also queues new messages "
+        "for an idle session (`codex queue --thread`), so they appear as a prompt in the open terminal.",
+        "resume": "`codex queue` needs the thread id the hooks reported, i.e. trusted hooks. Without them use "
+        "--headless-delivery (a separate `codex exec` turn, not visible in any terminal).",
         "acknowledgement": "Inside `codex exec` the default sandbox has no network, so the agent cannot call the API itself; "
         "the adapter posts the agent's final message as its reply (authored with the agent's own token).",
     }
@@ -271,11 +275,36 @@ class Codex(ClaudeCode):
         return base / "hooks.json"
 
     def push(self, store: Store, session: dict[str, Any], text: str) -> str | None:
-        """Resume the codex thread with the message (opt-in). The final answer is relayed by the supervisor."""
+        """Queue the message on the participant's own Codex thread (opt-in, `auto_resume`).
+
+        `codex queue --thread <id>` hands it to whichever Codex process holds the thread: an open terminal shows it as
+        a prompt and the answer streams there, in the same thread the human is watching (busy: after the current
+        turn). A separate `codex exec resume` would instead fail with "thread already has an active writer" while the
+        terminal is open, and its turn would never be visible there. The agent answers with `agentlink reply` itself.
+
+        Returns None (message stays pending) when disabled or when the queue command fails; after a failure the
+        thread is not retried for PUSH_BACKOFF seconds, so a broken install is not hammered every iteration."""
         cfg = store.get("adapter.codex", {}) or {}
-        if not cfg.get("auto_resume") or not session.get("local_id"):
+        thread = session.get("local_id")
+        if not cfg.get("auto_resume") or not thread or batch_shim(self.binary or "codex"):
+            return None  # batch shim: cmd.exe would re-parse the message text (see oscmd.batch_shim)
+        key = f"push_failed.codex.{thread}"
+        if time.time() - float((store.get(key) or {}).get("at") or 0) < PUSH_BACKOFF:
             return None
-        return "codex exec resume"
+        try:
+            res = subprocess.run(
+                [self.binary or "codex", "queue", "--thread", str(thread), "--message", text],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=60, check=False,
+            )  # fmt: skip
+            ok, err = res.returncode == 0, (res.stderr or res.stdout or "").strip()
+        except (OSError, subprocess.TimeoutExpired) as e:
+            ok, err = False, str(e)
+        if not ok:
+            store.put(key, {"at": time.time(), "error": err[-300:]})
+            return None
+        store.put(key, None)
+        return "codex queue"
 
 
 class OpenCode(Adapter):
