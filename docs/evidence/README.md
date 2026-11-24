@@ -12,6 +12,7 @@ Raw, unedited outputs of verification runs. Failed and invalid runs are kept on 
 | `runtime-e2e-20261121T232513Z.json` | `--only codex,opencode` | Codex 4/4 and OpenCode 4/4 through the production supervisor loop (`--headless-delivery`) |
 | `runtime-e2e-20261122T024122Z.json` | `--only codex` | Codex 4/4 through the supervisor loop after the timeout/keep-alive changes |
 | `runtime-e2e-20261122T024142Z.json` | `--only codex-timeout` | Real Codex turn cut at 1 s: exit 124, supervisor survives, message stays pending, not re-run. 4/4 |
+| `codex-queue-20261124.md` | manual tmux run, codex-cli 0.171.0 | Codex auto-resume via `codex queue --thread`: the message appears as a prompt in the open terminal (idle, busy, closed-then-reopened) and the answer streams there |
 | `deployment-verify-*.log` | `deployment/verify.sh` | 22/22 deployment checks (20/20 before stop.sh/start.sh) on Linux x86_64 under `systemd --user` (**not** a Raspberry Pi) |
 | `automated-deployment-audit.md` | review before the automated deployment work | state of the tooling at `5987a92`, gaps, risks, decisions |
 | `automated-deployment-validation.md` | the deploy test levels | results by level (real services and Raspberry Pi **NOT_VERIFIED**), per-phase YAML contracts |

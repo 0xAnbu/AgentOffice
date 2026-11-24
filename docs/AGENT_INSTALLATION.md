@@ -90,6 +90,15 @@ retried. A message whose turns all failed stays pending — it is never reported
 retries it again (bounded spending): answer it by hand or re-send it. `--auto-resume` is the equivalent for idle Claude Code sessions
 (`claude --resume <id> -p`), also off by default.
 
+`--auto-resume` with **Codex** (needs trusted hooks, which report the thread id): when a message arrives while the
+participant's Codex session is idle, the supervisor runs `codex queue --thread <id> --message <notification>`. The
+open terminal shows it as a new prompt and the participant watches Codex answer it in the same thread; the agent
+replies with `agentlink reply` itself. If the thread is busy, Codex runs it after the current turn; if the terminal is
+closed, it waits in Codex's queue until the thread is reopened. A failed `codex queue` leaves the message pending and
+is not retried for 2 minutes. It never starts a second writer on the thread (the old `codex exec resume` did, and
+failed with "already has an active writer" while the terminal was open).
+`--headless-delivery` only takes over when no hooked Codex session is open.
+
 ## 3. What actually works per runtime
 
 Statuses: **SUPPORTED_AND_TESTED** = exercised with the real runtime and recorded in `docs/evidence/` (and by automated
@@ -103,7 +112,7 @@ Versions used for the real runs: Claude Code 2.1.330, codex-cli 0.170.0, opencod
 | Notification (supervisor receives + confirms) | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED (automated) |
 | Injection (message reaches the model) | SUPPORTED_AND_TESTED (hook `additionalContext`) | SUPPORTED_AND_TESTED (headless `codex exec`) | SUPPORTED_AND_TESTED (headless `opencode run`) | UNSUPPORTED |
 | Rewake (wake an open, idle session) | IMPLEMENTED_NOT_VERIFIED (`asyncRewake` hook) | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED |
-| Resume (wake a stopped session) | PARTIALLY_SUPPORTED | IMPLEMENTED_NOT_VERIFIED | IMPLEMENTED_NOT_VERIFIED | UNSUPPORTED |
+| Resume (wake a stopped session) | PARTIALLY_SUPPORTED | SUPPORTED_AND_TESTED (`codex queue --thread`, visible in the open terminal; codex-cli 0.171.0) | IMPLEMENTED_NOT_VERIFIED | UNSUPPORTED |
 | Acknowledgement | SUPPORTED_AND_TESTED (`agentlink ack` by the agent) | PARTIALLY_SUPPORTED (relayed by the supervisor) | PARTIALLY_SUPPORTED (relayed) | SUPPORTED_AND_TESTED (automated) |
 | Processing (answer with evidence) | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED | SUPPORTED_AND_TESTED (automated) |
 | Sub-agents as sessions | IMPLEMENTED_NOT_VERIFIED (hook tests only) | UNKNOWN | UNKNOWN | UNSUPPORTED |
@@ -114,7 +123,7 @@ Versions used for the real runs: Claude Code 2.1.330, codex-cli 0.170.0, opencod
 See the [runtime evidence index](evidence/README.md) for the dated successful, failed and invalid runs, and [Testing](TESTING.md) for reproduction.
 
 Not verified with real runtimes (be explicit with participants): Codex/OpenCode interactive hooks/plugin,
-sub-agents of any runtime, auto-resume by the supervisor, Stop-hook blocking in a real session (automated tests
+sub-agents of any runtime, the full supervisor auto-resume loop with trusted Codex hooks (the `codex queue` step itself is verified), Claude auto-resume, Stop-hook blocking in a real session (automated tests
 only), behaviour on macOS/Windows.
 
 ## 4. What the participant sees with Claude Code hooks

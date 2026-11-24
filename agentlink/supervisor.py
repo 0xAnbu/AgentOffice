@@ -269,9 +269,7 @@ class Supervisor:
 
             text = render(pending, s["project"], s["server_id"])
             mech = ad.push(self.store, s, text)
-            if mech == "codex exec resume":
-                self._codex_resume(s, pending, text)
-            elif mech == "opencode run --session":
+            if mech == "opencode run --session":
                 self._opencode_run(s, pending, text)
             if mech:
                 self.store.mark([int(m["message_id"]) for m in pending], "injected_to_runtime", s["server_id"], mech)
@@ -293,23 +291,6 @@ class Supervisor:
                       "evidence": {"reply_message_id": r["id"], "adapter": s["runtime"], "mechanism": mech}})  # fmt: skip
         self.store.mark(ids, "processed", evidence={"reply_message_id": r["id"]})
         self.store.set_reported(ids, "processed")
-
-    def _codex_resume(self, s: dict[str, Any], pending: list[dict[str, Any]], text: str) -> None:
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(
-            "r", suffix=".txt", delete=False
-        ) as out:  # closed: Windows lets codex write it
-            path = Path(out.name)
-        try:
-            cmd = ["codex", "exec", "resume", s["local_id"], "-o", str(path), text + "\n\nAnswer the message(s) directly; "
-                   "your final message will be posted as your reply."]  # fmt: skip
-            with self.keepalive():
-                ok = _run(cmd, s["cwd"] or None, 600).returncode == 0
-            if ok:
-                self._relay(s, pending, path.read_text("utf-8"), "codex exec resume")
-        finally:
-            path.unlink(missing_ok=True)
 
     def _opencode_run(self, s: dict[str, Any], pending: list[dict[str, Any]], text: str) -> None:
         cmd = ["opencode", "run", "--session", s["local_id"], text + "\n\nAnswer the message(s) directly; your final "
